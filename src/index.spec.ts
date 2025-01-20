@@ -1,16 +1,16 @@
 import { Factory } from './index.js';
 
 interface TestObject {
-    name: string;
     age?: number;
+    name: string;
 }
 
-const defaultObject: TestObject = { name: 'Default Name', age: 30 };
+const defaultObject: TestObject = { age: 30, name: 'Default Name' };
 
 export interface ComplexObject extends Record<string, any> {
     name: string;
     options?: Options;
-    value: number | null;
+    value: null | number;
 }
 
 export interface Options extends Record<string, any> {
@@ -203,17 +203,17 @@ describe('Factory class functionality', () => {
         it('uses the specified faker instance', () => {
             const complexFactory = new Factory<ComplexObject>((factory) => ({
                 name: factory.person.firstName(),
-                value: factory.number.int({ min: 1, max: 3 }),
                 options: {
                     type: '1',
                 },
+                value: factory.number.int({ max: 3, min: 1 }),
             }));
             const factoryWithOptions = new Factory<ComplexObject>(
                 (factory) => ({
                     ...defaults,
                     options: {
-                        type: '1',
                         children: factory.use(complexFactory.batch, 2),
+                        type: '1',
                     },
                 }),
             );
