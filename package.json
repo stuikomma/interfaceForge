@@ -3,16 +3,26 @@
     "author": "Na'aman Hirschfeld",
     "version": "2.1.0",
     "license": "MIT",
-    "description": "Gracefully generate testing data using TypeScript and Faker.js",
+    "description": "A TypeScript library for creating strongly typed mock data factories using Faker.js for test data generation",
     "keywords": [
         "factory",
         "testing",
         "typescript",
         "faker.js",
-        "faker"
+        "faker",
+        "mock-data",
+        "test-data",
+        "fixtures",
+        "type-safe",
+        "mocking"
     ],
-    "repository": "https://github.com/Goldziher/interface-forge",
-    "bugs": "https://github.com/Goldziher/interface-forge/issues",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Goldziher/interface-forge"
+    },
+    "bugs": {
+        "url": "https://github.com/Goldziher/interface-forge/issues"
+    },
     "homepage": "https://github.com/Goldziher/interface-forge#readme",
     "files": [
         "dist",
@@ -30,6 +40,9 @@
             "default": "./dist/index.mjs"
         }
     },
+    "engines": {
+        "node": ">=16.0.0"
+    },
     "sideEffects": false,
     "scripts": {
         "build": "rimraf dist && vite build",
@@ -39,6 +52,7 @@
         "prepare": "husky",
         "prepublishOnly": "pnpm build",
         "test": "vitest run",
+        "test:coverage": "vitest run --coverage",
         "typecheck": "tsc --noEmit"
     },
     "devDependencies": {
