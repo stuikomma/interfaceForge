@@ -50,9 +50,6 @@ importers:
             eslint-plugin-promise:
                 specifier: 7.2.1
                 version: 7.2.1(eslint@9.27.0(jiti@2.4.2))
-            eslint-plugin-tsdoc:
-                specifier: ^0.4.0
-                version: 0.4.0
             eslint-plugin-unicorn:
                 specifier: 59.0.1
                 version: 59.0.1(eslint@9.27.0(jiti@2.4.2))
@@ -2476,12 +2473,6 @@ packages:
         engines: { node: '>=4' }
         peerDependencies:
             eslint: ^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9.7
-
-    eslint-plugin-tsdoc@0.4.0:
-        resolution:
-            {
-                integrity: sha512-MT/8b4aKLdDClnS8mP3R/JNjg29i0Oyqd/0ym6NnQf+gfKbJJ4ZcSh2Bs1H0YiUMTBwww5JwXGTWot/RwyJ7aQ==,
-            }
 
     eslint-plugin-unicorn@57.0.0:
         resolution:
@@ -6812,11 +6803,6 @@ snapshots:
             semver: 6.3.1
             string.prototype.matchall: 4.0.12
             string.prototype.repeat: 1.0.0
-
-    eslint-plugin-tsdoc@0.4.0:
-        dependencies:
-            '@microsoft/tsdoc': 0.15.1
-            '@microsoft/tsdoc-config': 0.17.1
 
     eslint-plugin-unicorn@57.0.0(eslint@9.27.0(jiti@2.4.2)):
         dependencies:
