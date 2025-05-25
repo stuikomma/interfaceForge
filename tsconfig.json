@@ -1,11 +1,11 @@
 {
-    "include": ["**/*.ts", "eslint.config.mjs"],
+    "include": ["**/*.ts"],
     "compilerOptions": {
         "alwaysStrict": true,
         "baseUrl": ".",
         "esModuleInterop": true,
-        "module": "NodeNext",
-        "moduleResolution": "NodeNext",
+        "inlineSourceMap": true,
+        "module": "CommonJS",
         "noImplicitAny": true,
         "noUnusedLocals": true,
         "noUnusedParameters": true,
@@ -13,10 +13,13 @@
         "strict": true,
         "strictFunctionTypes": true,
         "strictNullChecks": true,
-        "strictPropertyInitialization": true,
-        "strictBindCallApply": true,
-        "forceConsistentCasingInFileNames": true,
         "target": "ESNext",
+        "resolveJsonModule": true,
+        "allowSyntheticDefaultImports": true,
+        "forceConsistentCasingInFileNames": true,
+        "incremental": true,
+        "strictBindCallApply": true,
+        "strictPropertyInitialization": true,
         "types": ["vitest/globals", "vitest"]
     }
 }
