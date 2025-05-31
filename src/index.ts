@@ -3,12 +3,12 @@
 import { en, Faker, LocaleDefinition, Randomizer } from '@faker-js/faker';
 import { isIterator, isRecord } from '@tool-belt/type-predicates';
 
-type FactoryFunction<T> = (
+export type FactoryFunction<T> = (
     factory: Factory<T>,
     iteration: number,
 ) => FactorySchema<T>;
 
-type FactorySchema<T> = {
+export type FactorySchema<T> = {
     [K in keyof T]:
         | Generator<T[K], T[K], T[K]>
         | Ref<T[K], (...args: unknown[]) => T[K]>
