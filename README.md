@@ -264,7 +264,7 @@ extend<U extends T>(factoryFn: FactoryFunction<U>): Factory<U>
 ```typescript
 // Base factory
 const BaseUserFactory = new Factory<BaseUser>((factory) => ({
-    id: factory.datatype.uuid(),
+    id: factory.string.uuid(),
     createdAt: factory.date.recent(),
 }));
 
@@ -332,7 +332,10 @@ const userWithPosts = UserWithPostsFactory.build();
 // }
 
 // Mixing with static values
-const UserWithStatusFactory = UserFactory.compose({
+interface UserWithStatus extends User {
+    status: string;
+}
+const UserWithStatusFactory = UserFactory.compose<UserWithStatus>({
     status: 'active',
 });
 
@@ -343,33 +346,3 @@ const user = UserWithStatusFactory.build();
 //     status: "active"
 // }
 ```
-
-## TypeScript Compatibility
-
-Interface-Forge is designed to work with TypeScript 5.x and above. It leverages TypeScript's type system to provide type safety and autocompletion for your factories.
-
-## Faker.js Integration
-
-Interface-Forge extends the `Faker` class from Faker.js, giving you access to all Faker.js functionalities directly from your factory instance. This means you can use any Faker.js method to generate data for your factory.
-
-For example:
-
-```typescript
-const UserFactory = new Factory<User>((factory) => ({
-    // Using Faker.js methods directly
-    firstName: factory.person.firstName(),
-    lastName: factory.person.lastName(),
-    email: factory.internet.email(),
-    // ... other properties
-}));
-```
-
-For more information about available Faker.js methods, see the [Faker.js documentation](https://fakerjs.dev/api/).
-
-## Contributing
-
-Contributions of any kind are welcome! Please see the [contributing guide](CONTRIBUTING.md).
-
-## License
-
-Interface-Forge is licensed under the [MIT License](LICENSE).

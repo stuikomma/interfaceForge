@@ -1,4 +1,4 @@
-import { Factory } from './index.js';
+import { Factory } from '../src/index';
 
 interface TestObject {
     age?: number;
@@ -238,11 +238,13 @@ describe('Factory class functionality', () => {
 
         it('extends a base factory with additional properties', () => {
             const BaseUserFactory = new Factory<BaseUser>((factory) => ({
-                id: factory.datatype.uuid(),
+                id: factory.string.uuid(),
                 createdAt: factory.date.recent(),
             }));
 
             const AdminUserFactory = BaseUserFactory.extend<AdminUser>((factory) => ({
+                id: factory.string.uuid(),
+                createdAt: factory.date.recent(),
                 role: 'admin',
                 permissions: ['read', 'write', 'delete'],
             }));
@@ -256,12 +258,13 @@ describe('Factory class functionality', () => {
 
         it('allows overriding base factory properties', () => {
             const BaseUserFactory = new Factory<BaseUser>((factory) => ({
-                id: factory.datatype.uuid(),
+                id: factory.string.uuid(),
                 createdAt: factory.date.recent(),
             }));
 
             const CustomUserFactory = BaseUserFactory.extend<BaseUser>((factory) => ({
                 id: 'custom-id',
+                createdAt: factory.date.recent(),
             }));
 
             const user = CustomUserFactory.build();
@@ -285,6 +288,10 @@ describe('Factory class functionality', () => {
             posts: Post[];
         }
 
+        interface UserWithStatus extends User {
+            status: string;
+        }
+
         it('composes a factory with other factories', () => {
             const UserFactory = new Factory<User>((factory) => ({
                 name: factory.person.fullName(),
@@ -292,8 +299,16 @@ describe('Factory class functionality', () => {
             }));
 
             const PostFactory = new Factory<Post>((factory) => ({
-                title: factory.lorem.sentence(),
-                content: factory.lorem.paragraph(),
+                title: factory.helpers.arrayElement([
+                    'Welcome to My Website',
+                    'About Me',
+                    'Contact Information',
+                ]),
+                content: factory.helpers.arrayElement([
+                    'Thanks for visiting my personal website.',
+                    'I am a software developer passionate about coding.',
+                    'Feel free to reach out through the contact form.',
+                ]),
             }));
 
             const UserWithPostsFactory = UserFactory.compose<UserWithPosts>({
@@ -314,7 +329,7 @@ describe('Factory class functionality', () => {
                 email: factory.internet.email(),
             }));
 
-            const UserWithStatusFactory = UserFactory.compose({
+            const UserWithStatusFactory = UserFactory.compose<UserWithStatus>({
                 status: 'active',
             });
 
