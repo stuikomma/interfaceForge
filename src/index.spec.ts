@@ -224,4 +224,104 @@ describe('Factory class functionality', () => {
             );
         });
     });
+
+    describe('extend method', () => {
+        interface BaseUser {
+            id: string;
+            createdAt: Date;
+        }
+
+        interface AdminUser extends BaseUser {
+            role: string;
+            permissions: string[];
+        }
+
+        it('extends a base factory with additional properties', () => {
+            const BaseUserFactory = new Factory<BaseUser>((factory) => ({
+                id: factory.datatype.uuid(),
+                createdAt: factory.date.recent(),
+            }));
+
+            const AdminUserFactory = BaseUserFactory.extend<AdminUser>((factory) => ({
+                role: 'admin',
+                permissions: ['read', 'write', 'delete'],
+            }));
+
+            const admin = AdminUserFactory.build();
+            expect(admin.id).toBeDefined();
+            expect(admin.createdAt).toBeInstanceOf(Date);
+            expect(admin.role).toBe('admin');
+            expect(admin.permissions).toEqual(['read', 'write', 'delete']);
+        });
+
+        it('allows overriding base factory properties', () => {
+            const BaseUserFactory = new Factory<BaseUser>((factory) => ({
+                id: factory.datatype.uuid(),
+                createdAt: factory.date.recent(),
+            }));
+
+            const CustomUserFactory = BaseUserFactory.extend<BaseUser>((factory) => ({
+                id: 'custom-id',
+            }));
+
+            const user = CustomUserFactory.build();
+            expect(user.id).toBe('custom-id');
+            expect(user.createdAt).toBeInstanceOf(Date);
+        });
+    });
+
+    describe('compose method', () => {
+        interface User {
+            name: string;
+            email: string;
+        }
+
+        interface Post {
+            title: string;
+            content: string;
+        }
+
+        interface UserWithPosts extends User {
+            posts: Post[];
+        }
+
+        it('composes a factory with other factories', () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                name: factory.person.fullName(),
+                email: factory.internet.email(),
+            }));
+
+            const PostFactory = new Factory<Post>((factory) => ({
+                title: factory.lorem.sentence(),
+                content: factory.lorem.paragraph(),
+            }));
+
+            const UserWithPostsFactory = UserFactory.compose<UserWithPosts>({
+                posts: PostFactory.batch(3),
+            });
+
+            const userWithPosts = UserWithPostsFactory.build();
+            expect(userWithPosts.name).toBeDefined();
+            expect(userWithPosts.email).toBeDefined();
+            expect(userWithPosts.posts).toHaveLength(3);
+            expect(userWithPosts.posts[0]).toHaveProperty('title');
+            expect(userWithPosts.posts[0]).toHaveProperty('content');
+        });
+
+        it('allows mixing factories with static values', () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                name: factory.person.fullName(),
+                email: factory.internet.email(),
+            }));
+
+            const UserWithStatusFactory = UserFactory.compose({
+                status: 'active',
+            });
+
+            const user = UserWithStatusFactory.build();
+            expect(user.name).toBeDefined();
+            expect(user.email).toBeDefined();
+            expect(user.status).toBe('active');
+        });
+    });
 });
