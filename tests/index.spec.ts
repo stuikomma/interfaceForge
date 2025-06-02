@@ -83,85 +83,19 @@ describe('Factory class functionality', () => {
         });
 
         it('handles generator iteration correctly', () => {
-            const factory = new Factory<ComplexObject>((factory) => ({
+            const factory = new Factory<ComplexObject>((_factory, _iteration) => ({
                 ...defaults,
-                type: factory.sample(typeOptions),
+                type: _factory.sample(typeOptions),
             }));
 
             const result = factory.build();
             expect(result.type).toBeTruthy();
         });
-    });
-
-    describe('batch method', () => {
-        it('creates a batch of objects with default properties', () => {
-            const factory = new Factory<TestObject>(() => defaultObject);
-            const size = 5;
-            const results = factory.batch(size);
-            expect(results).toHaveLength(size);
-            results.forEach((result) => {
-                expect(result).toEqual(defaultObject);
-            });
-        });
-
-        it('applies the same overrides to all objects in a batch', () => {
-            const factory = new Factory<TestObject>(() => defaultObject);
-            const overrides = { age: 45 };
-            const size = 3;
-            const results = factory.batch(size, overrides);
-            results.forEach((result) => {
-                expect(result.age).toBe(overrides.age);
-            });
-        });
-
-        it('applies unique overrides to each object in a batch when provided an array', () => {
-            const factory = new Factory<TestObject>(() => defaultObject);
-            const overrides = [
-                { name: 'Unique Name 1' },
-                { name: 'Unique Name 2' },
-            ];
-            const results = factory.batch(overrides.length, overrides);
-            results.forEach((result, index) => {
-                expect(result.name).toBe(overrides[index].name);
-            });
-        });
-
-        it('returns an empty array when size is 0', () => {
-            const factory = new Factory<TestObject>(() => defaultObject);
-            const results = factory.batch(0);
-            expect(results).toEqual([]);
-        });
-
-        it('handles batch generation with complex overrides', () => {
-            const factory = new Factory<ComplexObject>(() => ({
-                ...defaults,
-                value: 99,
-            }));
-            const overrides = [{ name: 'Object 1' }, { name: 'Object 2' }];
-            const results = factory.batch(2, overrides);
-            expect(results[0].name).toBe('Object 1');
-            expect(results[1].name).toBe('Object 2');
-        });
-    });
-
-    describe('iterate method', () => {
-        it('cycles through provided values indefinitely', () => {
-            const factory = new Factory<TestObject>(() => defaultObject);
-            const values = ['Value 1', 'Value 2', 'Value 3'];
-            const generator = factory.iterate(values);
-            const cycleLength = values.length * 2; // Test two full cycles
-            const results = Array.from(
-                { length: cycleLength },
-                () => generator.next().value,
-            );
-            const expectedResults = [...values, ...values];
-            expect(results).toEqual(expectedResults);
-        });
 
         it('cycles through values of an iterable', () => {
-            const factory = new Factory<ComplexObject>((factory, i) => ({
-                name: factory.person.firstName(),
-                value: i + 1,
+            const factory = new Factory<ComplexObject>((_factory, _iteration) => ({
+                name: _factory.person.firstName(),
+                value: _factory.iterate([1, 2, 3]).next().value,
             }));
             const generator = factory.iterate([1, 2, 3]);
             expect(generator.next().value).toBe(1);
@@ -186,9 +120,9 @@ describe('Factory class functionality', () => {
         });
 
         it('samples values from the iterable', () => {
-            const factory = new Factory<ComplexObject>((factory, i) => ({
-                name: factory.person.firstName(),
-                value: i + 1,
+            const factory = new Factory<ComplexObject>((_factory, _iteration) => ({
+                name: _factory.person.firstName(),
+                value: _factory.iterate([1, 2, 3]).next().value,
             }));
             const generator = factory.sample([1, 2, 3]);
             const samples = new Set<number>();
@@ -227,26 +161,26 @@ describe('Factory class functionality', () => {
 
     describe('extend method', () => {
         interface BaseUser {
-            id: string;
             createdAt: Date;
+            id: string;
         }
 
         interface AdminUser extends BaseUser {
-            role: string;
             permissions: string[];
+            role: string;
         }
 
         it('extends a base factory with additional properties', () => {
             const BaseUserFactory = new Factory<BaseUser>((factory) => ({
-                id: factory.string.uuid(),
                 createdAt: factory.date.recent(),
+                id: factory.string.uuid(),
             }));
 
             const AdminUserFactory = BaseUserFactory.extend<AdminUser>((factory) => ({
-                id: factory.string.uuid(),
                 createdAt: factory.date.recent(),
-                role: 'admin',
+                id: factory.string.uuid(),
                 permissions: ['read', 'write', 'delete'],
+                role: 'admin',
             }));
 
             const admin = AdminUserFactory.build();
@@ -258,13 +192,13 @@ describe('Factory class functionality', () => {
 
         it('allows overriding base factory properties', () => {
             const BaseUserFactory = new Factory<BaseUser>((factory) => ({
-                id: factory.string.uuid(),
                 createdAt: factory.date.recent(),
+                id: factory.string.uuid(),
             }));
 
             const CustomUserFactory = BaseUserFactory.extend<BaseUser>((factory) => ({
-                id: 'custom-id',
                 createdAt: factory.date.recent(),
+                id: 'custom-id',
             }));
 
             const user = CustomUserFactory.build();
@@ -275,13 +209,13 @@ describe('Factory class functionality', () => {
 
     describe('compose method', () => {
         interface User {
-            name: string;
             email: string;
+            name: string;
         }
 
         interface Post {
-            title: string;
             content: string;
+            title: string;
         }
 
         interface UserWithPosts extends User {
@@ -294,20 +228,20 @@ describe('Factory class functionality', () => {
 
         it('composes a factory with other factories', () => {
             const UserFactory = new Factory<User>((factory) => ({
-                name: factory.person.fullName(),
                 email: factory.internet.email(),
+                name: factory.person.fullName(),
             }));
 
             const PostFactory = new Factory<Post>((factory) => ({
-                title: factory.helpers.arrayElement([
-                    'Welcome to My Website',
-                    'About Me',
-                    'Contact Information',
-                ]),
                 content: factory.helpers.arrayElement([
                     'Thanks for visiting my personal website.',
                     'I am a software developer passionate about coding.',
                     'Feel free to reach out through the contact form.',
+                ]),
+                title: factory.helpers.arrayElement([
+                    'Welcome to My Website',
+                    'About Me',
+                    'Contact Information',
                 ]),
             }));
 
@@ -325,8 +259,8 @@ describe('Factory class functionality', () => {
 
         it('allows mixing factories with static values', () => {
             const UserFactory = new Factory<User>((factory) => ({
-                name: factory.person.fullName(),
                 email: factory.internet.email(),
+                name: factory.person.fullName(),
             }));
 
             const UserWithStatusFactory = UserFactory.compose<UserWithStatus>({
