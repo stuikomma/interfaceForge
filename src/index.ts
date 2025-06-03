@@ -15,6 +15,7 @@ type FactorySchema<T> = {
         | T[K];
 };
 
+
 /*
  * A reference to a function that returns a value of type `T`.
  * */
@@ -26,11 +27,14 @@ class Ref<T, C extends (...args: unknown[]) => T> {
         this.handler = handler;
         this.args = args;
     }
-
+    
     callHandler(): T {
         return this.handler(...this.args);
     }
 }
+
+type BeforeBuildHook<T> = (params: Partial<T>) => Partial<T> | Promise<Partial<T>>; 
+type AfterBuildHook<T> = (obj: T) => T | Promise<T>;
 
 /**
  * Builds a single object based on the factory's schema.
@@ -43,6 +47,8 @@ class Ref<T, C extends (...args: unknown[]) => T> {
  */
 export class Factory<T> extends Faker {
     private readonly factory: FactoryFunction<T>;
+    private beforeBuildHooks: BeforeBuildHook<T>[] = [];
+    private afterBuildHooks: AfterBuildHook<T>[] = [];
 
     constructor(
         factory: FactoryFunction<T>,
@@ -107,6 +113,56 @@ export class Factory<T> extends Faker {
     build = (kwargs?: Partial<T>): T => {
         return this.generate(0, kwargs);
     };
+
+    /**
+     * Adds a hook that will be executed before building the instance.
+     * @param hook. Function that takes partial parameters and returns partial parameters.
+     * @returns The current Factory instance.
+     */
+    beforeBuild(hook: BeforeBuildHook<T>): this {
+        if (typeof hook !== 'function') {
+            throw new TypeError('Hook must be a function');
+        }
+        this.beforeBuildHooks.push(hook);
+        return this;
+    }
+
+    /**
+     * Adds a hook that will be executed after building the instance.
+     * @param hook. Function that takes the result and returns the result.
+     * @returns The current Factory instance.
+     */
+    afterBuild(hook: AfterBuildHook<T>): this {
+        if (typeof hook !== 'function') {
+            throw new TypeError('Hook must be a function');
+        }
+        this.afterBuildHooks.push(hook);
+        return this;
+    }
+
+    /**
+     * Constructs an instance of T by applying hooks before and after construction.
+     * @param kwargs - Partial parameters for instance construction.
+     * @returns A promise that resolves to a T instance.
+     */
+    async buildWithHooks(kwargs?: Partial<T>): Promise<T> {
+        let params = kwargs ?? {};
+        let result: T;
+        try {
+            for (const hook of this.beforeBuildHooks) {
+                params = await hook(params);
+            }
+            result = this.build(params);
+            
+            for (const hook of this.afterBuildHooks) {
+                result = await hook(result);
+            }
+        } catch (error) {
+            console.error('Error in the hooks:', error);
+            throw error;
+        }
+        return result;
+    }
 
     /**
      * Cycles through the values of an iterable indefinitely.

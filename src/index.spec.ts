@@ -5,6 +5,12 @@ interface TestObject {
     name: string;
 }
 
+interface User {
+    firstName: string,
+    lastName: string,
+    email: string,
+}
+
 const defaultObject: TestObject = { age: 30, name: 'Default Name' };
 
 export interface ComplexObject extends Record<string, any> {
@@ -24,6 +30,16 @@ const defaults: ComplexObject = {
     name: 'testObject',
     value: null,
 };
+
+// Simulation of an asynchronous validation function
+async function validateUser(user: User): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            console.log(`User ${user.firstName} ${user.lastName} validated`);
+            resolve();
+        }, 100);
+    });
+}
 
 describe('Factory class functionality', () => {
     describe('build method', () => {
@@ -224,4 +240,121 @@ describe('Factory class functionality', () => {
             );
         });
     });
+
+    describe('Factory Hooks', () => {
+        it('apply beforeBuild correctly', async () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                firstName: factory.person.firstName(),
+                lastName: factory.person.lastName(),
+                email: '',
+            }))
+                .beforeBuild((params) => {
+                    return { ...params, firstName: 'alice' };
+                });
+
+            const user = await UserFactory.buildWithHooks();
+            expect(user.firstName).toBe('alice');
+        });
+
+        it('apply afterBuild correctly', async () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                firstName: factory.person.firstName(),
+                lastName: factory.person.lastName(),
+                email: '',
+            }))
+                .afterBuild((user) => {
+                    user.email = `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`;
+                    return user;
+                });
+
+            const user = await UserFactory.buildWithHooks();
+            expect(user.email).toBe(`${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`);
+        });
+
+        it('runs multiple hooks in order', async () => {
+            const logs: string[] = [];
+            const UserFactory = new Factory<User>(() => ({
+                firstName: 'jhon',
+                lastName: 'Doe',
+                email: '',
+            }))
+                .beforeBuild((b) => { logs.push('before1'); return b; })
+                .beforeBuild((b) => { logs.push('before2'); return b; })
+                .beforeBuild((a) => { logs.push('after1'); return a; })
+                .beforeBuild((a) => { logs.push('after2'); return a; });
+
+            await UserFactory.buildWithHooks();
+            expect(logs).toEqual(['before1', 'before2', 'after1', 'after2']);
+        });
+
+        it('handles errors in beforeBuild', async () => {
+            const UserFactory = new Factory<User>(() => ({
+                firstName: 'Jhon',
+                lastName: 'Doe',
+                email: '',
+            }))
+                .beforeBuild(() => {
+                    throw new Error('Error in beforeBuild');
+                });
+            await expect(UserFactory.buildWithHooks()).rejects.toThrow('Error in beforeBuild');
+        });
+
+        it('hadles errors in afterBuild', async () => {
+            const UserFactory = new Factory<User>(() => ({
+                firstName: 'Jhon',
+                lastName: 'Doe',
+                email: '',
+            }))
+                .beforeBuild(() => {
+                    throw new Error('Error in afterBuild');
+                });
+            await expect(UserFactory.buildWithHooks()).rejects.toThrow('Error in afterBuild');
+        });
+
+        it('allows synchronous and asynchronous hooks', async () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                firstName: factory.person.firstName(),
+                lastName: factory.person.lastName(),
+                email: '',
+            }))
+                .afterBuild((user) => {
+                    user.email = `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`;
+                    return user;
+                })
+                .afterBuild(async (user) => {
+                    await validateUser(user);
+                    return user;
+                })
+
+            const user = await UserFactory.buildWithHooks();
+            expect(user.email).toBe(`${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`);
+        });
+
+        it('validates that the hooks return the correct type', async () => {
+            const UserFactory = new Factory<User>(() => ({
+                firstName: 'Jhon',
+                lastName: 'Doe',
+                email: '',
+            }))
+                .afterBuild((user) => {
+                    return { ...user, email: `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com` };
+                });
+
+            const user = await UserFactory.buildWithHooks();
+            expect(user.email).toBe('jhon.doe@example.com');
+        });
+
+        it('throws error if a hook returns an incorrect type', async () => {
+            const UserFactory = new Factory<User>(() => ({
+                firstName: 'jhon',
+                lastName: 'doe',
+                email: '',
+            }))
+                .afterBuild(() => {
+                    throw new TypeError('Incorrect type returned by hook');
+                });
+
+            await expect(UserFactory.buildWithHooks()).rejects.toThrow('Incorrect type returned by hook');
+        })
+    })
 });
