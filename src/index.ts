@@ -1,7 +1,7 @@
 /* eslint-disable unicorn/no-new-array */
 
 import { en, Faker, LocaleDefinition, Randomizer } from '@faker-js/faker';
-import { isIterator, isRecord } from '@tool-belt/type-predicates';
+import { isFunction, isIterator, isRecord } from '@tool-belt/type-predicates';
 
 export type FactoryComposition<T> = {
     [K in keyof T]?: Factory<T[K]> | T[K];
@@ -12,14 +12,17 @@ export type FactoryFunction<T> = (
     iteration: number,
 ) => FactorySchema<T>;
 
+
 export type FactorySchema<T> = {
     [K in keyof T]:
-        | Generator<T[K], T[K], T[K]>
-        | Ref<T[K], (...args: unknown[]) => T[K]>
-        | T[K];
+    | Generator<T[K], T[K], T[K]>
+    | Ref<T[K], (...args: unknown[]) => T[K]>
+    | T[K];
 };
 
+type AfterBuildHook<T> = (obj: T) => Promise<T> | T;
 
+type BeforeBuildHook<T> = (params: Partial<T>) => Partial<T> | Promise<Partial<T>>;
 /*
  * A reference to a function that returns a value of type `T`.
  * */
@@ -31,14 +34,11 @@ class Ref<T, C extends (...args: unknown[]) => T> {
         this.handler = handler;
         this.args = args;
     }
-    
+
     callHandler(): T {
         return this.handler(...this.args);
     }
 }
-
-type BeforeBuildHook<T> = (params: Partial<T>) => Partial<T> | Promise<Partial<T>>; 
-type AfterBuildHook<T> = (obj: T) => T | Promise<T>;
 
 /**
  * Builds a single object based on the factory's schema.
@@ -50,9 +50,9 @@ type AfterBuildHook<T> = (obj: T) => T | Promise<T>;
  * @returns An instance of type `T`, generated and optionally modified according to the `kwargs` parameter.
  */
 export class Factory<T> extends Faker {
-    private readonly factory: FactoryFunction<T>;
-    private beforeBuildHooks: BeforeBuildHook<T>[] = [];
     private afterBuildHooks: AfterBuildHook<T>[] = [];
+    private beforeBuildHooks: BeforeBuildHook<T>[] = [];
+    private readonly factory: FactoryFunction<T>;
 
     constructor(
         factory: FactoryFunction<T>,
@@ -76,6 +76,19 @@ export class Factory<T> extends Faker {
         });
 
         this.factory = factory;
+    }
+
+    /**
+     * Adds a hook that will be executed after building the instance.
+     * @param hook. Function that takes the result and returns the result.
+     * @returns The current Factory instance.
+     */
+    afterBuild(hook: (result: T) => Promise<T> | T): this {
+        if (typeof hook !== 'function') {
+            throw new TypeError('Hook must be a function');
+        }
+        this.afterBuildHooks.push(hook);
+        return this;
     }
 
     /**
@@ -104,6 +117,18 @@ export class Factory<T> extends Faker {
 
         return new Array(size).fill(null).map((_, i) => this.generate(i));
     };
+    /**
+     * Adds a hook that will be executed before building the instance.
+     * @param hook. Function that takes partial parameters and returns partial parameters.
+     * @returns The current Factory instance.
+     */
+    beforeBuild(hook: BeforeBuildHook<T>): this {
+        if (!isFunction(hook)) {
+            throw new TypeError('Hook must be a function');
+        }
+        this.beforeBuildHooks.push(hook);
+        return this;
+    }
 
     /**
      * Builds a single object based on the factory's schema.
@@ -119,32 +144,6 @@ export class Factory<T> extends Faker {
     };
 
     /**
-     * Adds a hook that will be executed before building the instance.
-     * @param hook. Function that takes partial parameters and returns partial parameters.
-     * @returns The current Factory instance.
-     */
-    beforeBuild(hook: BeforeBuildHook<T>): this {
-        if (typeof hook !== 'function') {
-            throw new TypeError('Hook must be a function');
-        }
-        this.beforeBuildHooks.push(hook);
-        return this;
-    }
-
-    /**
-     * Adds a hook that will be executed after building the instance.
-     * @param hook. Function that takes the result and returns the result.
-     * @returns The current Factory instance.
-     */
-    afterBuild(hook: AfterBuildHook<T>): this {
-        if (typeof hook !== 'function') {
-            throw new TypeError('Hook must be a function');
-        }
-        this.afterBuildHooks.push(hook);
-        return this;
-    }
-
-    /**
      * Constructs an instance of T by applying hooks before and after construction.
      * @param kwargs - Partial parameters for instance construction.
      * @returns A promise that resolves to a T instance.
@@ -152,44 +151,42 @@ export class Factory<T> extends Faker {
     async buildWithHooks(kwargs?: Partial<T>): Promise<T> {
         let params = kwargs ?? {};
         let result: T;
-        try {
-            for (const hook of this.beforeBuildHooks) {
-                params = await hook(params);
-            }
-            result = this.build(params);
-            
-            for (const hook of this.afterBuildHooks) {
-                result = await hook(result);
-            }
-        } catch (error) {
-            console.error('Error in the hooks:', error);
-            throw error;
+
+        for (const hook of this.beforeBuildHooks) {
+            params = await hook(params);
+        }
+
+        result = this.build(params);
+
+        for (const hook of this.afterBuildHooks) {
+            result = await hook(result);
         }
         return result;
-
-     * Composes the current factory with other factories or values to create a new factory.
-     * This method allows for factory composition, where a factory can include properties
-     * generated by other factories or static values.
-     * 
-     * @template U The type of the composed factory
-     * @param composition An object that defines how to compose the factory with other factories or values
-     * @returns A new Factory instance that combines the base factory's properties with the composed ones
-     * 
-     * @example
-     * const UserFactory = new Factory<User>((factory) => ({
-     *     name: factory.person.fullName(),
-     *     email: factory.internet.email(),
-     * }));
-     * 
-     * const PostFactory = new Factory<Post>((factory) => ({
-     *     title: factory.lorem.sentence(),
-     *     content: factory.lorem.paragraph(),
-     * }));
-     * 
-     * const UserWithPostsFactory = UserFactory.compose({
-     *     posts: PostFactory.batch(3),
-     * });
-     */
+    }
+    
+    /* Composes the current factory with other factories or values to create a new factory.
+    * This method allows for factory composition, where a factory can include properties
+    * generated by other factories or static values.
+    * 
+    * @template U The type of the composed factory
+    * @param composition An object that defines how to compose the factory with other factories or values
+    * @returns A new Factory instance that combines the base factory's properties with the composed ones
+    * 
+    * @example
+    * const UserFactory = new Factory<User>((factory) => ({
+    *     name: factory.person.fullName(),
+    *     email: factory.internet.email(),
+    * }));
+    * 
+    * const PostFactory = new Factory<Post>((factory) => ({
+    *     title: factory.lorem.sentence(),
+    *     content: factory.lorem.paragraph(),
+    * }));
+    * 
+    * const UserWithPostsFactory = UserFactory.compose({
+    *     posts: PostFactory.batch(3),
+    * });
+    */
     compose<U extends T>(composition: FactoryComposition<U>): Factory<U> {
         return new Factory<U>((_factory, iteration) => {
             const baseValues = this.factory(this, iteration) as FactorySchema<U>;
