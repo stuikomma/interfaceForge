@@ -6,9 +6,9 @@ interface TestObject {
 }
 
 interface User {
-    email: string,
-    firstName: string,
-    lastName: string,
+    email: string;
+    firstName: string;
+    lastName: string;
 }
 
 const defaultObject: TestObject = { age: 30, name: 'Default Name' };
@@ -250,10 +250,9 @@ describe('Factory class functionality', () => {
                 email: '',
                 firstName: factory.person.firstName(),
                 lastName: factory.person.lastName(),
-            }))
-                .beforeBuild((params) => {
-                    return { ...params, firstName: 'alice' };
-                });
+            })).beforeBuild((params) => {
+                return { ...params, firstName: 'alice' };
+            });
 
             const user = await UserFactory.buildWithHooks();
             expect(user.firstName).toBe('alice');
@@ -264,14 +263,15 @@ describe('Factory class functionality', () => {
                 email: '',
                 firstName: factory.person.firstName(),
                 lastName: factory.person.lastName(),
-            }))
-                .afterBuild((user) => {
-                    user.email = `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`;
-                    return user;
-                });
+            })).afterBuild((user) => {
+                user.email = `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`;
+                return user;
+            });
 
             const user = await UserFactory.buildWithHooks();
-            expect(user.email).toBe(`${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`);
+            expect(user.email).toBe(
+                `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`,
+            );
         });
 
         it('runs multiple hooks in order', async () => {
@@ -281,10 +281,22 @@ describe('Factory class functionality', () => {
                 firstName: 'jhon',
                 lastName: 'Doe',
             }))
-                .beforeBuild((b) => { logs.push('before1'); return b; })
-                .beforeBuild((b) => { logs.push('before2'); return b; })
-                .beforeBuild((a) => { logs.push('after1'); return a; })
-                .beforeBuild((a) => { logs.push('after2'); return a; });
+                .beforeBuild((b) => {
+                    logs.push('before1');
+                    return b;
+                })
+                .beforeBuild((b) => {
+                    logs.push('before2');
+                    return b;
+                })
+                .beforeBuild((a) => {
+                    logs.push('after1');
+                    return a;
+                })
+                .beforeBuild((a) => {
+                    logs.push('after2');
+                    return a;
+                });
 
             await UserFactory.buildWithHooks();
             expect(logs).toEqual(['before1', 'before2', 'after1', 'after2']);
@@ -295,11 +307,12 @@ describe('Factory class functionality', () => {
                 email: '',
                 firstName: 'Jhon',
                 lastName: 'Doe',
-            }))
-                .beforeBuild(() => {
-                    throw new Error('Error in beforeBuild');
-                });
-            await expect(UserFactory.buildWithHooks()).rejects.toThrow('Error in beforeBuild');
+            })).beforeBuild(() => {
+                throw new Error('Error in beforeBuild');
+            });
+            await expect(UserFactory.buildWithHooks()).rejects.toThrow(
+                'Error in beforeBuild',
+            );
         });
 
         it('hadles errors in afterBuild', async () => {
@@ -307,11 +320,12 @@ describe('Factory class functionality', () => {
                 email: '',
                 firstName: 'Jhon',
                 lastName: 'Doe',
-            }))
-                .beforeBuild(() => {
-                    throw new Error('Error in afterBuild');
-                });
-            await expect(UserFactory.buildWithHooks()).rejects.toThrow('Error in afterBuild');
+            })).beforeBuild(() => {
+                throw new Error('Error in afterBuild');
+            });
+            await expect(UserFactory.buildWithHooks()).rejects.toThrow(
+                'Error in afterBuild',
+            );
         });
 
         it('allows synchronous and asynchronous hooks', async () => {
@@ -320,17 +334,19 @@ describe('Factory class functionality', () => {
                 firstName: factory.person.firstName(),
                 lastName: factory.person.lastName(),
             }))
-            .afterBuild((user: User) => {
-                user.email = `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`;
-                return user;
-            })
-            .afterBuild(async (user: User) => {
-                await validateUser(user);
-                return user;
-            });
+                .afterBuild((user: User) => {
+                    user.email = `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`;
+                    return user;
+                })
+                .afterBuild(async (user: User) => {
+                    await validateUser(user);
+                    return user;
+                });
 
             const user = await UserFactory.buildWithHooks();
-            expect(user.email).toBe(`${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`);
+            expect(user.email).toBe(
+                `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`,
+            );
         });
 
         it('validates that the hooks return the correct type', async () => {
@@ -338,10 +354,12 @@ describe('Factory class functionality', () => {
                 email: '',
                 firstName: 'Jhon',
                 lastName: 'Doe',
-            }))
-                .afterBuild((user) => {
-                    return { ...user, email: `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com` };
-                });
+            })).afterBuild((user) => {
+                return {
+                    ...user,
+                    email: `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`,
+                };
+            });
 
             const user = await UserFactory.buildWithHooks();
             expect(user.email).toBe('jhon.doe@example.com');
@@ -352,13 +370,13 @@ describe('Factory class functionality', () => {
                 email: '',
                 firstName: 'jhon',
                 lastName: 'doe',
-            }))
-                .afterBuild(() => {
-                    throw new TypeError('Incorrect type returned by hook');
-                });
+            })).afterBuild(() => {
+                throw new TypeError('Incorrect type returned by hook');
+            });
 
-            await expect(UserFactory.buildWithHooks()).rejects.toThrow('Incorrect type returned by hook');
-        })
-    })
+            await expect(UserFactory.buildWithHooks()).rejects.toThrow(
+                'Incorrect type returned by hook',
+            );
+        });
+    });
 });
-
