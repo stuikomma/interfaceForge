@@ -245,7 +245,7 @@ describe('Factory class functionality', () => {
     });
 
     describe('Factory Hooks', () => {
-        it('apply beforeBuild correctly', async () => {
+        it('applies beforeBuild correctly', async () => {
             const UserFactory = new Factory<User>((factory) => ({
                 email: '',
                 firstName: factory.person.firstName(),
