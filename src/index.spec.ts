@@ -274,7 +274,7 @@ describe('Factory class functionality', () => {
             );
         });
 
-        it('runs multiple hooks in order', async () => {
+        it('runs multiple hooks in the correct order', async () => {
             const logs: string[] = [];
             const UserFactory = new Factory<User>(() => ({
                 email: '',
