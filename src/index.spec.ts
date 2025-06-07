@@ -160,6 +160,13 @@ describe('Factory class functionality', () => {
             expect(results).toEqual(expectedResults);
         });
 
+        it('throws error when given empty iterable', () => {
+            const factory = new Factory<TestObject>(() => defaultObject);
+            expect(() => factory.iterate([])).toThrow(
+                'Cannot create generator from empty iterable',
+            );
+        });
+
         it('cycles through values of an iterable', () => {
             const factory = new Factory<ComplexObject>(
                 (_factory, _iteration) => ({
@@ -187,6 +194,13 @@ describe('Factory class functionality', () => {
                 expect(newValue).not.toBe(lastValue);
                 lastValue = newValue;
             }
+        });
+
+        it('throws error when given empty iterable', () => {
+            const factory = new Factory<TestObject>(() => defaultObject);
+            expect(() => factory.sample([])).toThrow(
+                'Cannot create generator from empty iterable',
+            );
         });
 
         it('samples values from the iterable', () => {

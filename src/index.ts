@@ -2,7 +2,8 @@
 
 import { en, Faker, LocaleDefinition, Randomizer } from '@faker-js/faker';
 import { isIterator, isRecord } from '@tool-belt/type-predicates';
-import { iterableToArray, merge, Ref } from './utils';
+import { CycleGenerator, SampleGenerator } from './generators';
+import { merge, Ref } from './utils';
 
 export { Ref } from './utils';
 
@@ -182,20 +183,8 @@ export class Factory<T> extends Faker {
      * @returns A Generator that yields elements from the iterable indefinitely.
      */
     iterate<T>(iterable: Iterable<T>): Generator<T, T, T> {
-        const values = iterableToArray(iterable);
-        return (function* () {
-            let counter = 0;
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-            while (true) {
-                const value = values[counter];
-                if (counter === values.length - 1) {
-                    counter = 0;
-                } else {
-                    counter++;
-                }
-                yield value;
-            }
-        })();
+        const generator = new CycleGenerator(iterable);
+        return generator.generate();
     }
 
     /**
@@ -211,23 +200,8 @@ export class Factory<T> extends Faker {
      * @returns A Generator that yields random elements from the iterable indefinitely, ensuring no immediate repetitions.
      */
     sample<T>(iterable: Iterable<T>): Generator<T, T, T> {
-        const values = iterableToArray(iterable);
-        return (function* () {
-            let lastValue = null;
-            let newValue = null;
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-            while (true) {
-                if (values.length <= 1) {
-                    yield values[0];
-                }
-                lastValue = newValue;
-                while (newValue === lastValue) {
-                    newValue =
-                        values[Math.floor(Math.random() * values.length)];
-                }
-                yield newValue;
-            }
-        })();
+        const generator = new SampleGenerator(iterable);
+        return generator.generate();
     }
 
     /**
