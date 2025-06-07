@@ -301,11 +301,8 @@ export class Factory<T> extends Faker {
      * // Creates a user with 3 posts and a favorite post
      * const user = UserFactory.build();
      */
-    use<C extends (...args: unknown[]) => unknown>(
-        handler: C,
-        ...args: Parameters<C>
-    ): Ref<ReturnType<C>, C> {
-        return new Ref<ReturnType<C>, C>({ args, handler });
+    use<R>(handler: (...args: never[]) => R, ...args: unknown[]): R {
+        return new Ref({ args, handler }) as R;
     }
 
     #generate(iteration: number, kwargs?: Partial<T>, depth = 0): T {

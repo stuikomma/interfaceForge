@@ -246,8 +246,11 @@ describe('Factory class functionality', () => {
                 (factory) => ({
                     ...defaults,
                     options: {
-                        children: factory.use(complexFactory.batch, 2),
-                        type: '1',
+                        children: factory.use(
+                            complexFactory.batch.bind(complexFactory),
+                            2,
+                        ),
+                        type: '1' as const,
                     },
                 }),
             );

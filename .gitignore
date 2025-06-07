@@ -11,3 +11,7 @@ node_modules/
 # Claude Code
 .claude/
 CLAUDE.md
+
+# Documentation
+docs/
+docs-markdown/

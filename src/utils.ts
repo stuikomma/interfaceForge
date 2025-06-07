@@ -8,7 +8,7 @@ import { isRecord } from '@tool-belt/type-predicates';
  * @template T - The return type of the encapsulated function
  * @template C - The function type that returns T
  */
-export class Ref<T, C extends (...args: unknown[]) => T> {
+export class Ref<T, C extends (...args: never[]) => T> {
     private readonly args: Parameters<C>;
     private readonly handler: C;
 
