@@ -301,7 +301,7 @@ export class Factory<T> extends Faker {
      * // Creates a user with 3 posts and a favorite post
      * const user = UserFactory.build();
      */
-    use<R>(handler: (...args: never[]) => R, ...args: unknown[]): R {
+    use<R, A extends unknown[]>(handler: (...args: A) => R, ...args: A): R {
         return new Ref({ args, handler }) as R;
     }
 
