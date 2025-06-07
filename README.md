@@ -15,6 +15,8 @@ Interface-Forge is a TypeScript library for creating strongly typed mock data fa
 - **Flexible Overrides**: Easily customize any part of your generated data with the `build({ ... })` method
 - **Built for Testing**: Generate single instances, batches, or compose factories together—perfect for unit tests, integration tests, and storybooks
 
+📚 **[View Full API Documentation](https://goldziher.github.io/interface-forge/)**
+
 ## Table of Contents
 
 - [Interface-Forge](#interface-forge)
