@@ -237,16 +237,21 @@ export class Factory<T> extends Faker {
         if (value instanceof Ref) {
             return value.callHandler();
         }
+
         if (isIterator(value)) {
             return (value as Iterator<unknown>).next().value;
         }
+
         if (isRecord(value)) {
-            return Object.fromEntries(
-                Object.entries(value as Record<string, unknown>).map(
-                    ([k, v]) => [k, this.#parseValue(v)],
-                ),
-            );
+            const result: Record<string, unknown> = {};
+            for (const [key, val] of Object.entries(
+                value as Record<string, unknown>,
+            )) {
+                result[key] = this.#parseValue(val);
+            }
+            return result;
         }
+
         return value;
     }
 }

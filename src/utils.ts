@@ -37,16 +37,18 @@ export function iterableToArray<T>(iterable: Iterable<T>): T[] {
  * @returns The merged object
  */
 export function merge<T>(target: T, ...sources: unknown[]): T {
-    const output: Partial<T> = { ...target };
-    for (const source of sources.filter(Boolean) as Partial<T>[]) {
-        for (const [key, value] of Object.entries(source)) {
-            const existingValue: unknown = Reflect.get(output, key);
-            if (isRecord(value) && isRecord(existingValue)) {
-                Reflect.set(output, key, merge(existingValue, value));
-            } else {
-                Reflect.set(output, key, value);
-            }
+    const output = { ...target } as Record<string, unknown>;
+
+    for (const source of sources) {
+        if (!source || typeof source !== 'object') {continue;}
+
+        for (const key in source as Record<string, unknown>) {
+            const sourceValue = (source as Record<string, unknown>)[key];
+            const targetValue = output[key];
+
+            output[key] = isRecord(sourceValue) && isRecord(targetValue) ? merge(targetValue, sourceValue) : sourceValue;
         }
     }
+
     return output as T;
 }
