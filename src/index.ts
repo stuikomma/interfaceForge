@@ -80,10 +80,10 @@ export class Factory<T> extends Faker {
 
             return new Array(size)
                 .fill(null)
-                .map((_, i) => this.generate(i, generator.next().value));
+                .map((_, i) => this.#generate(i, generator.next().value));
         }
 
-        return new Array(size).fill(null).map((_, i) => this.generate(i));
+        return new Array(size).fill(null).map((_, i) => this.#generate(i));
     };
 
     /**
@@ -96,7 +96,7 @@ export class Factory<T> extends Faker {
      * @returns An instance of type `T`, generated and optionally modified according to the `kwargs` parameter.
      */
     build = (kwargs?: Partial<T>): T => {
-        return this.generate(0, kwargs);
+        return this.#generate(0, kwargs);
     };
 
     /**
@@ -220,20 +220,20 @@ export class Factory<T> extends Faker {
         return new Ref<ReturnType<C>, C>({ args, handler });
     }
 
-    protected generate(iteration: number, kwargs?: Partial<T>): T {
+    #generate(iteration: number, kwargs?: Partial<T>): T {
         const defaults = this.factory(this, iteration);
 
         if (kwargs) {
             return merge(
-                this.parseValue(defaults),
-                this.parseValue(kwargs),
+                this.#parseValue(defaults),
+                this.#parseValue(kwargs),
             ) as T;
         }
 
-        return this.parseValue(defaults) as T;
+        return this.#parseValue(defaults) as T;
     }
 
-    protected parseValue(value: unknown): unknown {
+    #parseValue(value: unknown): unknown {
         if (value instanceof Ref) {
             return value.callHandler();
         }
@@ -243,7 +243,7 @@ export class Factory<T> extends Faker {
         if (isRecord(value)) {
             return Object.fromEntries(
                 Object.entries(value as Record<string, unknown>).map(
-                    ([k, v]) => [k, this.parseValue(v)],
+                    ([k, v]) => [k, this.#parseValue(v)],
                 ),
             );
         }
