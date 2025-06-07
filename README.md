@@ -7,6 +7,14 @@
 
 Interface-Forge is a TypeScript library for creating strongly typed mock data factories. This library builds upon [Faker.js](https://fakerjs.dev/) by providing a simple and intuitive `Factory` class that extends the `Faker` class from [Faker.js](https://fakerjs.dev/).
 
+## Why Interface-Forge?
+
+- **Type-Safe by Design**: Full TypeScript support with compile-time type checking for all your test data
+- **Zero Learning Curve**: Extends Faker.js, so all Faker methods work out of the box—if you know Faker, you know Interface-Forge
+- **Powerful Composition**: Build complex object graphs with circular references using the `use()` method for lazy evaluation
+- **Flexible Overrides**: Easily customize any part of your generated data with the `build({ ... })` method
+- **Built for Testing**: Generate single instances, batches, or compose factories together—perfect for unit tests, integration tests, and storybooks
+
 ## Table of Contents
 
 - [Interface-Forge](#interface-forge)
