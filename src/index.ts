@@ -34,6 +34,7 @@ export type FactorySchema<T> = {
  */
 export class Factory<T> extends Faker {
     private readonly factory: FactoryFunction<T>;
+    private readonly maxDepth: number;
 
     constructor(
         factory: FactoryFunction<T>,
@@ -43,6 +44,11 @@ export class Factory<T> extends Faker {
              * If an array is provided, the first locale that has a definition for a given property will be used.
              */
             locale?: LocaleDefinition | LocaleDefinition[];
+            /**
+             * Maximum recursion depth for nested factory references.
+             * Default is 10. Set to 0 to disable nested generation.
+             */
+            maxDepth?: number;
             /**
              * The Randomizer to use.
              * Specify this only if you want to use it to achieve a specific goal,
@@ -57,6 +63,7 @@ export class Factory<T> extends Faker {
         });
 
         this.factory = factory;
+        this.maxDepth = options?.maxDepth ?? 10;
     }
 
     /**
@@ -73,6 +80,14 @@ export class Factory<T> extends Faker {
      *          according to the `kwargs` parameter.
      */
     batch = (size: number, kwargs?: Partial<T> | Partial<T>[]): T[] => {
+        if (!Number.isInteger(size) || size < 0) {
+            throw new Error('Batch size must be a non-negative integer');
+        }
+
+        if (size === 0) {
+            return [];
+        }
+
         if (kwargs) {
             const generator = this.iterate<Partial<T>>(
                 Array.isArray(kwargs) ? kwargs : ([kwargs] as Partial<T>[]),
@@ -80,10 +95,12 @@ export class Factory<T> extends Faker {
 
             return new Array(size)
                 .fill(null)
-                .map((_, i) => this.#generate(i, generator.next().value));
+                .map((_, i) => this.#generate(i, generator.next().value, 0));
         }
 
-        return new Array(size).fill(null).map((_, i) => this.#generate(i));
+        return new Array(size)
+            .fill(null)
+            .map((_, i) => this.#generate(i, undefined, 0));
     };
 
     /**
@@ -96,7 +113,7 @@ export class Factory<T> extends Faker {
      * @returns An instance of type `T`, generated and optionally modified according to the `kwargs` parameter.
      */
     build = (kwargs?: Partial<T>): T => {
-        return this.#generate(0, kwargs);
+        return this.#generate(0, kwargs, 0);
     };
 
     /**
@@ -124,22 +141,27 @@ export class Factory<T> extends Faker {
      * });
      */
     compose<U extends T>(composition: FactoryComposition<U>): Factory<U> {
-        return new Factory<U>((_factory, iteration) => {
-            const baseValues = this.factory(
-                this,
-                iteration,
-            ) as FactorySchema<U>;
-            const composedValues = Object.fromEntries(
-                Object.entries(composition).map(
-                    ([key, value]) =>
-                        [
-                            key,
-                            value instanceof Factory ? value.build() : value,
-                        ] as [string, unknown],
-                ),
-            );
-            return { ...baseValues, ...composedValues } as FactorySchema<U>;
-        });
+        return new Factory<U>(
+            (_factory, iteration) => {
+                const baseValues = this.factory(
+                    this,
+                    iteration,
+                ) as FactorySchema<U>;
+                const composedValues = Object.fromEntries(
+                    Object.entries(composition).map(
+                        ([key, value]) =>
+                            [
+                                key,
+                                value instanceof Factory
+                                    ? value.build()
+                                    : value,
+                            ] as [string, unknown],
+                    ),
+                );
+                return { ...baseValues, ...composedValues } as FactorySchema<U>;
+            },
+            { maxDepth: this.maxDepth },
+        );
     }
 
     /**
@@ -164,14 +186,17 @@ export class Factory<T> extends Faker {
      * }));
      */
     extend<U extends T>(factoryFn: FactoryFunction<U>): Factory<U> {
-        return new Factory<U>((factory, iteration) => {
-            const baseValues = this.factory(
-                this,
-                iteration,
-            ) as FactorySchema<U>;
-            const extendedValues = factoryFn(factory, iteration);
-            return { ...baseValues, ...extendedValues };
-        });
+        return new Factory<U>(
+            (factory, iteration) => {
+                const baseValues = this.factory(
+                    this,
+                    iteration,
+                ) as FactorySchema<U>;
+                const extendedValues = factoryFn(factory, iteration);
+                return { ...baseValues, ...extendedValues };
+            },
+            { maxDepth: this.maxDepth },
+        );
     }
 
     /**
@@ -220,8 +245,66 @@ export class Factory<T> extends Faker {
         return new Ref<ReturnType<C>, C>({ args, handler });
     }
 
-    #generate(iteration: number, kwargs?: Partial<T>): T {
-        const defaults = this.factory(this, iteration);
+    #generate(iteration: number, kwargs?: Partial<T>, depth = 0): T {
+        if (depth >= this.maxDepth) {
+            // Return null/undefined for nested factories when max depth is reached
+            return null as T;
+        }
+
+        // Create a depth-limited version of this factory for nested calls
+        const depthLimitedFactory = new Proxy(this, {
+            get(target, prop) {
+                if (prop === 'build') {
+                    return (buildKwargs?: Partial<T>) =>
+                        target.#generate(0, buildKwargs, depth + 1);
+                }
+                if (prop === 'batch') {
+                    return (
+                        size: number,
+                        batchKwargs?: Partial<T> | Partial<T>[],
+                    ) => {
+                        if (depth + 1 >= target.maxDepth) {
+                            return null;
+                        }
+                        if (!Number.isInteger(size) || size < 0) {
+                            throw new Error(
+                                'Batch size must be a non-negative integer',
+                            );
+                        }
+                        if (size === 0) {
+                            return [];
+                        }
+                        if (batchKwargs) {
+                            const generator = target.iterate<Partial<T>>(
+                                Array.isArray(batchKwargs)
+                                    ? batchKwargs
+                                    : ([batchKwargs] as Partial<T>[]),
+                            );
+                            return new Array(size)
+                                .fill(null)
+                                .map((_, i) =>
+                                    target.#generate(
+                                        i,
+                                        generator.next().value,
+                                        depth + 1,
+                                    ),
+                                );
+                        }
+                        return new Array(size)
+                            .fill(null)
+                            .map((_, i) =>
+                                target.#generate(i, undefined, depth + 1),
+                            );
+                    };
+                }
+                return Reflect.get(target, prop);
+            },
+        });
+
+        const defaults = this.factory(
+            depthLimitedFactory as Factory<T>,
+            iteration,
+        );
 
         if (kwargs) {
             return merge(

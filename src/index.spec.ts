@@ -144,6 +144,20 @@ describe('Factory class functionality', () => {
             expect(results[0].name).toBe('Object 1');
             expect(results[1].name).toBe('Object 2');
         });
+
+        it('throws error for negative batch size', () => {
+            const factory = new Factory<TestObject>(() => defaultObject);
+            expect(() => factory.batch(-1)).toThrow(
+                'Batch size must be a non-negative integer',
+            );
+        });
+
+        it('throws error for non-integer batch size', () => {
+            const factory = new Factory<TestObject>(() => defaultObject);
+            expect(() => factory.batch(3.14)).toThrow(
+                'Batch size must be a non-negative integer',
+            );
+        });
     });
 
     describe('iterate method', () => {
@@ -316,6 +330,11 @@ describe('Factory class functionality', () => {
             status: string;
         }
 
+        interface TreeNode {
+            children?: TreeNode[];
+            value: string;
+        }
+
         it('composes a factory with other factories', () => {
             const UserFactory = new Factory<User>((factory) => ({
                 email: factory.internet.email(),
@@ -361,6 +380,37 @@ describe('Factory class functionality', () => {
             expect(user.name).toBeDefined();
             expect(user.email).toBeDefined();
             expect(user.status).toBe('active');
+        });
+
+        it('handles circular references with depth control', () => {
+            const TreeNodeFactory = new Factory<TreeNode>(
+                (factory) => ({
+                    children: factory.batch(2), // Self-reference
+                    value: factory.string.alphanumeric(5),
+                }),
+                { maxDepth: 3 },
+            );
+
+            const tree = TreeNodeFactory.build();
+            expect(tree.value).toBeDefined();
+            expect(tree.children).toHaveLength(2);
+            expect(tree.children![0].children).toHaveLength(2);
+            expect(tree.children![0].children![0].children).toBeNull();
+        });
+
+        it('allows customizing max depth', () => {
+            const TreeNodeFactory = new Factory<TreeNode>(
+                (factory) => ({
+                    children: factory.batch(1),
+                    value: factory.string.alphanumeric(5),
+                }),
+                { maxDepth: 2 },
+            );
+
+            const tree = TreeNodeFactory.build();
+            expect(tree.value).toBeDefined();
+            expect(tree.children).toHaveLength(1);
+            expect(tree.children![0].children).toBeNull();
         });
     });
 });
