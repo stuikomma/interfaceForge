@@ -412,5 +412,56 @@ describe('Factory class functionality', () => {
             expect(tree.children).toHaveLength(1);
             expect(tree.children![0].children).toBeNull();
         });
+
+        it('handles depth limit correctly with build overrides', () => {
+            const TreeNodeFactory = new Factory<TreeNode>(
+                (factory) => ({
+                    children: [factory.build({ value: 'child' })],
+                    value: factory.string.alphanumeric(5),
+                }),
+                { maxDepth: 2 },
+            );
+
+            const tree = TreeNodeFactory.build();
+            expect(tree.value).toBeDefined();
+            expect(tree.children).toHaveLength(1);
+            expect(tree.children![0].value).toBe('child');
+        });
+
+        it('returns null for batch when max depth exceeded', () => {
+            const TreeNodeFactory = new Factory<TreeNode>(
+                (factory) => ({
+                    children: factory.batch(2),
+                    value: 'node',
+                }),
+                { maxDepth: 1 },
+            );
+
+            const tree = TreeNodeFactory.build();
+            expect(tree.value).toBe('node');
+            expect(tree.children).toBeNull();
+        });
+
+        it('handles other factory methods through proxy', () => {
+            interface TestNode {
+                children?: TestNode[];
+                type: string;
+                value: string;
+            }
+
+            const TestNodeFactory = new Factory<TestNode>(
+                (factory) => ({
+                    children: factory.batch(1),
+                    type: factory.sample(['A', 'B', 'C']).next().value,
+                    value: factory.string.uuid(),
+                }),
+                { maxDepth: 2 },
+            );
+
+            const node = TestNodeFactory.build();
+            expect(node.value).toBeDefined();
+            expect(['A', 'B', 'C']).toContain(node.type);
+            expect(node.children).toHaveLength(1);
+        });
     });
 });
