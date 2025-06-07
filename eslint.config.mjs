@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import eslintJS from '@eslint/js';
+import eslintPluginJsdoc from 'eslint-plugin-jsdoc';
 import eslintPluginNode from 'eslint-plugin-n';
 import eslintPluginPerfectionist from 'eslint-plugin-perfectionist';
 import eslintPluginPromise from 'eslint-plugin-promise';
@@ -20,6 +21,7 @@ export default eslintTS.config(
     eslintPluginPromise.configs['flat/recommended'],
     eslintPluginUnicorn.configs.recommended,
     eslintPluginPerfectionist.configs['recommended-alphabetical'],
+    eslintPluginJsdoc.configs['flat/recommended-typescript'],
     {
         languageOptions: {
             globals: {
@@ -101,6 +103,11 @@ export default eslintTS.config(
             '@typescript-eslint/switch-exhaustiveness-check': 'warn',
             'curly': 'error',
             'eqeqeq': 'error',
+            // JSDoc rules
+            'jsdoc/require-jsdoc': 'off', // We don't require JSDoc on everything
+            'jsdoc/require-param-description': 'off', // Param names are often self-explanatory
+            'jsdoc/require-returns-description': 'off', // Return descriptions can be redundant
+            'jsdoc/tag-lines': ['error', 'any', { startLines: 1 }], // Allow blank lines in JSDoc
             'n/no-extraneous-import': 'off',
             'n/no-missing-import': 'off',
             'n/no-process-exit': 'error',

@@ -19,6 +19,7 @@ export class Ref<T, C extends (...args: unknown[]) => T> {
 
 /**
  * Converts an iterable to an array.
+ *
  * @param iterable The iterable to be converted to an array.
  * @returns An array containing the values of the iterable.
  */
@@ -32,6 +33,7 @@ export function iterableToArray<T>(iterable: Iterable<T>): T[] {
 
 /**
  * Deep merges objects together.
+ *
  * @param target The target object to merge into
  * @param sources The source objects to merge
  * @returns The merged object
@@ -40,13 +42,18 @@ export function merge<T>(target: T, ...sources: unknown[]): T {
     const output = { ...target } as Record<string, unknown>;
 
     for (const source of sources) {
-        if (!source || typeof source !== 'object') {continue;}
+        if (!source || typeof source !== 'object') {
+            continue;
+        }
 
         for (const key in source as Record<string, unknown>) {
             const sourceValue = (source as Record<string, unknown>)[key];
             const targetValue = output[key];
 
-            output[key] = isRecord(sourceValue) && isRecord(targetValue) ? merge(targetValue, sourceValue) : sourceValue;
+            output[key] =
+                isRecord(sourceValue) && isRecord(targetValue)
+                    ? merge(targetValue, sourceValue)
+                    : sourceValue;
         }
     }
 
