@@ -239,12 +239,11 @@ export class Factory<T> extends Faker {
      * @param args The arguments to be passed to the function upon invocation.
      * @returns A `Ref` instance encapsulating the function and its arguments, allowing for deferred execution.
      */
-    use<C extends (...args: never) => unknown>(
+    use<C extends (...args: unknown[]) => unknown>(
         handler: C,
         ...args: Parameters<C>
-    ): ReturnType<C> {
-        // @ts-expect-error, any and never clash
-        return new Ref<ReturnType<C>, C>({ args, handler }) as ReturnType<C>;
+    ): Ref<ReturnType<C>, C> {
+        return new Ref<ReturnType<C>, C>({ args, handler });
     }
 
     protected generate(iteration: number, kwargs?: Partial<T>): T {
@@ -265,13 +264,13 @@ export class Factory<T> extends Faker {
             return value.callHandler();
         }
         if (isIterator(value)) {
-            const iterator = value as Iterator<unknown>;
-            return iterator.next().value;
+            return (value as Iterator<unknown>).next().value;
         }
         if (isRecord(value)) {
-            const record = value as Record<string, unknown>;
             return Object.fromEntries(
-                Object.entries(record).map(([k, v]) => [k, this.parseValue(v)]),
+                Object.entries(value as Record<string, unknown>).map(
+                    ([k, v]) => [k, this.parseValue(v)],
+                ),
             );
         }
         return value;
