@@ -1,7 +1,12 @@
 import { isRecord } from '@tool-belt/type-predicates';
 
 /**
- * A reference to a function that returns a value of type `T`.
+ * Encapsulates a function and its arguments for deferred execution within factories.
+ * This enables lazy evaluation of nested factory calls, preventing infinite recursion
+ * and allowing complex object relationships to be defined declaratively.
+ *
+ * @template T - The return type of the encapsulated function
+ * @template C - The function type that returns T
  */
 export class Ref<T, C extends (...args: unknown[]) => T> {
     private readonly args: Parameters<C>;
@@ -18,10 +23,11 @@ export class Ref<T, C extends (...args: unknown[]) => T> {
 }
 
 /**
- * Converts an iterable to an array.
+ * Converts any iterable (Set, string, Array, etc.) to an array.
+ * Used internally by generators to enable indexed access to values.
  *
- * @param iterable The iterable to be converted to an array.
- * @returns An array containing the values of the iterable.
+ * @param iterable Any JavaScript iterable
+ * @returns Array containing all values from the iterable
  */
 export function iterableToArray<T>(iterable: Iterable<T>): T[] {
     const values: T[] = [];
@@ -32,11 +38,13 @@ export function iterableToArray<T>(iterable: Iterable<T>): T[] {
 }
 
 /**
- * Deep merges objects together.
+ * Performs a deep merge of objects, recursively merging nested objects.
+ * Arrays and non-object values are replaced, not merged.
+ * Used for applying kwargs overrides to factory-generated values.
  *
- * @param target The target object to merge into
- * @param sources The source objects to merge
- * @returns The merged object
+ * @param target The base object
+ * @param sources Objects whose properties will override the target
+ * @returns New object with merged properties (target is not mutated)
  */
 export function merge<T>(target: T, ...sources: unknown[]): T {
     const output = { ...target } as Record<string, unknown>;

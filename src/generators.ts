@@ -1,7 +1,10 @@
 import { iterableToArray } from './utils';
 
 /**
- * Base generator that handles converting iterables to arrays
+ * Abstract base class for generators that produce infinite sequences from finite iterables.
+ * Converts iterables to arrays for efficient random access and validates non-empty input.
+ *
+ * @template T - The type of values to generate
  */
 export abstract class BaseGenerator<T> {
     protected values: T[];
@@ -17,11 +20,15 @@ export abstract class BaseGenerator<T> {
 }
 
 /**
- * Generator that cycles through values indefinitely
+ * Generates values by cycling through an array in sequential order.
+ * When the end is reached, it starts over from the beginning, creating an infinite sequence.
+ * Useful for predictable, repeating patterns in test data.
+ *
+ * @template T - The type of values to cycle through
  */
 export class CycleGenerator<T> extends BaseGenerator<T> {
     generate(): Generator<T, T, T> {
-        const {values} = this;
+        const { values } = this;
         return (function* () {
             let counter = 0;
             // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -34,11 +41,16 @@ export class CycleGenerator<T> extends BaseGenerator<T> {
 }
 
 /**
- * Generator that samples values randomly without immediate repetition
+ * Generates random values from an array while preventing consecutive duplicates.
+ * Each value is randomly selected, but the same value will never appear twice in a row
+ * unless the array contains only one element. Useful for creating varied but not
+ * repetitive test data.
+ *
+ * @template T - The type of values to sample from
  */
 export class SampleGenerator<T> extends BaseGenerator<T> {
     generate(): Generator<T, T, T> {
-        const {values} = this;
+        const { values } = this;
         return (function* () {
             if (values.length === 1) {
                 // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
