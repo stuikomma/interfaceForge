@@ -203,6 +203,7 @@ export default eslintTS.config(
         },
         rules: {
             'no-console': 'off',
+            'unicorn/prefer-top-level-await': 'off',
         },
     },
     {

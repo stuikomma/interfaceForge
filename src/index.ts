@@ -1,10 +1,21 @@
 /* eslint-disable unicorn/no-new-array */
 
 import { en, Faker, LocaleDefinition, Randomizer } from '@faker-js/faker';
-import { isFunction, isIterator, isRecord } from '@tool-belt/type-predicates';
+import {
+    isAsyncFunction,
+    isFunction,
+    isIterator,
+    isRecord,
+} from '@tool-belt/type-predicates';
+import { ConfigurationError } from './errors';
 import { CycleGenerator, SampleGenerator } from './generators';
 import { merge, Ref } from './utils';
 
+export {
+    CircularReferenceError,
+    ConfigurationError,
+    ValidationError,
+} from './errors';
 export { Ref } from './utils';
 
 export type FactoryComposition<T> = {
@@ -73,13 +84,32 @@ export class Factory<T> extends Faker {
 
     /**
      * Adds a hook that will be executed after building the instance.
+     * Hooks are executed in the order they were added and can be either synchronous or asynchronous.
+     * This method returns the factory instance for method chaining.
      *
-     * @param hook. Function that takes the result and returns the result.
-     * @param hook
-     * @returns The current Factory instance.
+     * @param hook Function that receives the built instance and returns the modified instance
+     * @returns The current Factory instance for method chaining
+     *
+     * @example
+     * const UserFactory = new Factory<User>((factory) => ({
+     *     id: factory.string.uuid(),
+     *     name: factory.person.fullName(),
+     *     email: ''
+     * }))
+     * .afterBuild((user) => {
+     *     user.email = `${user.name.toLowerCase().replace(/\s+/g, '.')}@example.com`;
+     *     return user;
+     * })
+     * .afterBuild(async (user) => {
+     *     // Simulate API call to validate user
+     *     await validateUser(user);
+     *     return user;
+     * });
+     *
+     * const user = await UserFactory.buildAsync();
      */
-    afterBuild(hook: (result: T) => Promise<T> | T): this {
-        if (typeof hook !== 'function') {
+    afterBuild(hook: AfterBuildHook<T>): this {
+        if (!isFunction(hook) && !isAsyncFunction(hook)) {
             throw new TypeError('Hook must be a function');
         }
         this.afterBuildHooks.push(hook);
@@ -139,13 +169,36 @@ export class Factory<T> extends Faker {
     };
     /**
      * Adds a hook that will be executed before building the instance.
+     * Hooks receive the partial parameters (kwargs) and can modify them before the instance is built.
+     * Multiple hooks are executed in the order they were added.
      *
-     * @param hook. Function that takes partial parameters and returns partial parameters.
-     * @param hook
-     * @returns The current Factory instance.
+     * @param hook Function that receives partial parameters and returns modified parameters
+     * @returns The current Factory instance for method chaining
+     *
+     * @example
+     * const UserFactory = new Factory<User>((factory) => ({
+     *     id: factory.string.uuid(),
+     *     name: factory.person.fullName(),
+     *     role: 'user',
+     *     createdAt: factory.date.recent()
+     * }))
+     * .beforeBuild((params) => {
+     *     // Ensure admin users have specific properties
+     *     if (params.role === 'admin') {
+     *         return {
+     *             ...params,
+     *             permissions: ['read', 'write', 'delete'],
+     *             isVerified: true
+     *         };
+     *     }
+     *     return params;
+     * });
+     *
+     * const admin = await UserFactory.buildAsync({ role: 'admin' });
+     * // admin will have permissions and isVerified set automatically
      */
     beforeBuild(hook: BeforeBuildHook<T>): this {
-        if (!isFunction(hook)) {
+        if (!isFunction(hook) && !isAsyncFunction(hook)) {
             throw new TypeError('Hook must be a function');
         }
         this.beforeBuildHooks.push(hook);
@@ -155,9 +208,12 @@ export class Factory<T> extends Faker {
     /**
      * Generates a single instance of type T using the factory's schema.
      * Properties can be overridden by passing a partial object.
+     * Synchronous hooks are automatically applied if registered.
+     * If async hooks are registered, a ConfigurationError is thrown.
      *
      * @param kwargs Properties to override in the generated instance
      * @returns A new instance with factory-generated values merged with any overrides
+     * @throws {ConfigurationError} If async hooks are registered
      *
      * @example
      * const UserFactory = new Factory<User>((factory) => ({
@@ -173,30 +229,122 @@ export class Factory<T> extends Faker {
      * const adminUser = UserFactory.build({
      *     email: 'admin@example.com'
      * });
+     *
+     * // With synchronous hooks
+     * const FactoryWithHooks = new Factory<User>((factory) => ({
+     *     id: factory.string.uuid(),
+     *     name: factory.person.fullName(),
+     *     email: ''
+     * }))
+     * .beforeBuild((params) => {
+     *     params.email = params.email || 'default@example.com';
+     *     return params;
+     * })
+     * .afterBuild((user) => {
+     *     user.email = user.email.toLowerCase();
+     *     return user;
+     * });
+     *
+     * const userWithHooks = FactoryWithHooks.build(); // Hooks are applied automatically
      */
     build = (kwargs?: Partial<T>): T => {
-        return this.#generate(0, kwargs, 0);
+        // Check for async hooks
+        const hasAsyncHooks =
+            this.beforeBuildHooks.some((hook) => isAsyncFunction(hook)) ||
+            this.afterBuildHooks.some((hook) => isAsyncFunction(hook));
+
+        if (hasAsyncHooks) {
+            throw new ConfigurationError(
+                'Async hooks detected. Use buildAsync() method to build instances with async hooks.',
+            );
+        }
+
+        let params = kwargs ?? {};
+
+        // Apply synchronous beforeBuild hooks
+        for (const hook of this.beforeBuildHooks) {
+            params = hook(params) as Partial<T>;
+        }
+
+        // Generate the instance
+        let result = this.#generate(0, params, 0);
+
+        // Apply synchronous afterBuild hooks
+        for (const hook of this.afterBuildHooks) {
+            result = hook(result) as T;
+        }
+
+        return result;
     };
 
     /**
-     * Constructs an instance of T by applying hooks before and after construction.
+     * Builds an instance asynchronously with all registered hooks applied in sequence.
+     * This method supports both synchronous and asynchronous hooks.
+     * Hooks are executed in the order they were registered.
      *
-     * @param kwargs - Partial parameters for instance construction.
-     * @returns A promise that resolves to a T instance.
+     * @param kwargs Optional properties to override in the generated instance
+     * @returns A promise that resolves to the built and processed instance
+     * @throws {Error} If any hook throws an error during execution
+     *
+     * @example
+     * // With async hooks
+     * const UserFactory = new Factory<User>((factory) => ({
+     *     id: factory.string.uuid(),
+     *     name: factory.person.fullName(),
+     *     email: '',
+     *     status: 'pending'
+     * }))
+     * .beforeBuild((params) => {
+     *     // Synchronous hook
+     *     if (!params.email) {
+     *         const name = params.name || 'user';
+     *         params.email = `${name.toLowerCase().replace(/\s+/g, '.')}@example.com`;
+     *     }
+     *     return params;
+     * })
+     * .afterBuild(async (user) => {
+     *     // Asynchronous hook
+     *     if (user.status === 'pending') {
+     *         await activateUser(user);
+     *         user.status = 'active';
+     *     }
+     *     return user;
+     * });
+     *
+     * // Build with async hooks
+     * const user = await UserFactory.buildAsync();
+     *
+     * // Build with custom email - beforeBuild hook won't override it
+     * const customUser = await UserFactory.buildAsync({ email: 'custom@example.com' });
+     *
+     * // Can also be used with sync-only hooks for consistency
+     * const syncFactory = new Factory<Product>((factory) => ({
+     *     id: factory.string.uuid(),
+     *     name: factory.commerce.productName()
+     * }))
+     * .afterBuild((product) => {
+     *     product.name = product.name.toUpperCase();
+     *     return product;
+     * });
+     *
+     * const product = await syncFactory.buildAsync(); // Works with sync hooks too
      */
-    async buildWithHooks(kwargs?: Partial<T>): Promise<T> {
+    async buildAsync(kwargs?: Partial<T>): Promise<T> {
         let params = kwargs ?? {};
-        let result: T;
 
+        // Apply beforeBuild hooks
         for (const hook of this.beforeBuildHooks) {
             params = await hook(params);
         }
 
-        result = this.build(params);
+        // Generate the instance (without hooks, since we're applying them here)
+        let result = this.#generate(0, params, 0);
 
+        // Apply afterBuild hooks
         for (const hook of this.afterBuildHooks) {
             result = await hook(result);
         }
+
         return result;
     }
 

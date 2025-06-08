@@ -54,6 +54,17 @@ Advanced techniques for sophisticated scenarios:
 - Weighted distributions
 - Deterministic data with seeds
 
+### [06. Hooks and Validation](./06-hooks-and-validation.ts)
+
+Learn how to use hooks for data transformation and validation:
+
+- Using `beforeBuild()` and `afterBuild()` hooks
+- Synchronous hooks with `build()`
+- Asynchronous hooks with `buildAsync()`
+- Data validation and transformation
+- Conditional logic in hooks
+- Error handling and business rules
+
 ## Running the Examples
 
 To run any example:

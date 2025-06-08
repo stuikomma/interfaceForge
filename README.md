@@ -366,6 +366,100 @@ const user = UserWithStatusFactory.build();
 // }
 ```
 
+#### `beforeBuild`
+
+Adds a hook that will be executed before building the instance. Hooks receive the partial parameters (kwargs) and can modify them before the instance is built.
+
+**Signature:**
+
+```typescript
+beforeBuild(hook: BeforeBuildHook<T>): this
+```
+
+**Usage:**
+
+```typescript
+const UserFactory = new Factory<User>((factory) => ({
+    id: factory.string.uuid(),
+    email: '',
+    username: '',
+})).beforeBuild((params) => {
+    // Auto-generate email from username if not provided
+    if (!params.email && params.username) {
+        params.email = `${params.username}@example.com`;
+    }
+    return params;
+});
+
+const user = UserFactory.build({ username: 'john_doe' });
+// user.email == "john_doe@example.com"
+```
+
+#### `afterBuild`
+
+Adds a hook that will be executed after building the instance. Hooks are executed in the order they were added and can be either synchronous or asynchronous.
+
+**Signature:**
+
+```typescript
+afterBuild(hook: AfterBuildHook<T>): this
+```
+
+**Usage:**
+
+```typescript
+const ProductFactory = new Factory<Product>((factory) => ({
+    id: factory.string.uuid(),
+    name: factory.commerce.productName(),
+    price: factory.number.float({ min: 10, max: 1000 }),
+    formattedPrice: '',
+})).afterBuild((product) => {
+    // Format price with currency
+    product.formattedPrice = `$${product.price.toFixed(2)}`;
+    return product;
+});
+
+const product = ProductFactory.build();
+// product.formattedPrice == "$123.45"
+```
+
+#### `buildAsync`
+
+Builds an instance asynchronously with all registered hooks applied in sequence. This method supports both synchronous and asynchronous hooks.
+
+**Signature:**
+
+```typescript
+buildAsync(kwargs?: Partial<T>): Promise<T>
+```
+
+**Usage:**
+
+```typescript
+const UserFactory = new Factory<User>((factory) => ({
+    id: factory.string.uuid(),
+    email: factory.internet.email(),
+    isVerified: false,
+})).afterBuild(async (user) => {
+    // Simulate API call to verify email
+    await verifyEmail(user.email);
+    user.isVerified = true;
+    return user;
+});
+
+// Must use buildAsync for async hooks
+const user = await UserFactory.buildAsync();
+// user.isVerified == true
+```
+
+**Important Hook Behavior:**
+
+- Synchronous hooks automatically work with `build()`
+- If async hooks are registered, `build()` will throw a `ConfigurationError`
+- Use `buildAsync()` when you have async hooks or want consistent async behavior
+- Hooks are executed in the order they were registered
+- Multiple hooks of the same type can be chained
+
 ## TypeScript Compatibility
 
 Interface-Forge is designed to work with TypeScript 5.x and above. It leverages TypeScript's type system to provide type safety and autocompletion for your factories.
