@@ -38,7 +38,7 @@ describe('Generators', () => {
 
             let lastValue = gen.next().value;
             for (let i = 0; i < 50; i++) {
-                const {value} = gen.next();
+                const { value } = gen.next();
                 expect(value).not.toBe(lastValue);
                 expect([1, 2, 3, 4, 5]).toContain(value);
                 lastValue = value;

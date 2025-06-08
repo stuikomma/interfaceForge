@@ -194,6 +194,24 @@ export default eslintTS.config(
         },
     },
     {
-        ignores: ['out', 'dist', 'node_modules', 'target', 'coverage'],
+        files: ['examples/**/*.ts', 'examples/**/*.tsx'],
+        languageOptions: {
+            parserOptions: {
+                project: './examples/tsconfig.json',
+                tsconfigRootDir: __dirname,
+            },
+        },
+        rules: {
+            '@typescript-eslint/no-unsafe-assignment': 'off',
+            '@typescript-eslint/no-unsafe-call': 'off',
+            '@typescript-eslint/no-unsafe-member-access': 'off',
+            '@typescript-eslint/no-unsafe-return': 'off',
+            '@typescript-eslint/no-unused-vars': 'warn',
+            '@typescript-eslint/restrict-plus-operands': 'off',
+            'no-console': 'off',
+        },
+    },
+    {
+        ignores: ['out', 'dist', 'node_modules', 'target', 'coverage', 'docs'],
     },
 );
