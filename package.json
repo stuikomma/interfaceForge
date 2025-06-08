@@ -56,7 +56,7 @@
         "typecheck": "tsc --noEmit",
         "docs": "typedoc",
         "docs:markdown": "typedoc --options typedoc-markdown.json",
-        "docs:all": "pnpm docs && pnpm docs:markdown",
+        "docs:all": "pnpm docs --no-browser && pnpm docs:markdown",
         "docs:serve": "pnpm docs && http-server docs -p 8081 -o -c-1"
     },
     "devDependencies": {
