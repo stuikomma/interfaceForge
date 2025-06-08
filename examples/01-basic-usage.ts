@@ -1,0 +1,61 @@
+/**
+ * Basic Usage Example
+ *
+ * This example demonstrates the fundamental features of Interface-Forge:
+ * - Creating a simple factory
+ * - Building single instances
+ * - Building batches
+ * - Overriding default values
+ */
+
+import { Factory } from '../src';
+import { Faker } from '@faker-js/faker';
+
+// Define your TypeScript interface
+interface User {
+    age: number;
+    createdAt: Date;
+    email: string;
+    id: string;
+    isActive: boolean;
+    name: string;
+}
+
+// Create a factory for the User interface
+const UserFactory = new Factory<User>((faker: Faker) => ({
+    age: faker.number.int({ max: 80, min: 18 }),
+    createdAt: faker.date.past(),
+    email: faker.internet.email(),
+    id: faker.string.uuid(),
+    isActive: faker.datatype.boolean(),
+    name: faker.person.fullName(),
+}));
+
+// Example 1: Build a single user
+const user = UserFactory.build();
+console.log('Single user:', user);
+
+// Example 2: Build a batch of users
+const users = UserFactory.batch(5);
+console.log(`Generated ${users.length} users`);
+
+// Example 3: Override specific fields
+const customUser = UserFactory.build({
+    email: 'john@example.com',
+    isActive: true,
+    name: 'John Doe',
+});
+console.log('Custom user:', customUser);
+
+// Example 4: Batch with overrides
+const activeUsers = UserFactory.batch(3, {
+    age: 25,
+    isActive: true,
+});
+console.log('Active users:', activeUsers);
+
+// Example 5: Using Faker methods directly
+// Since Factory extends Faker, you can use any Faker method
+const companyName = UserFactory.company.name();
+const futureDate = UserFactory.date.future();
+console.log('Company:', companyName, 'Future date:', futureDate);

@@ -161,6 +161,20 @@ describe('Factory class functionality', () => {
             expect(results[0].name).toBe('Object 1');
             expect(results[1].name).toBe('Object 2');
         });
+
+        it('throws error for negative batch size', () => {
+            const factory = new Factory<TestObject>(() => defaultObject);
+            expect(() => factory.batch(-1)).toThrow(
+                'Batch size must be a non-negative integer',
+            );
+        });
+
+        it('throws error for non-integer batch size', () => {
+            const factory = new Factory<TestObject>(() => defaultObject);
+            expect(() => factory.batch(3.14)).toThrow(
+                'Batch size must be a non-negative integer',
+            );
+        });
     });
 
     describe('iterate method', () => {
@@ -175,6 +189,13 @@ describe('Factory class functionality', () => {
             );
             const expectedResults = [...values, ...values];
             expect(results).toEqual(expectedResults);
+        });
+
+        it('throws error when given empty iterable', () => {
+            const factory = new Factory<TestObject>(() => defaultObject);
+            expect(() => factory.iterate([])).toThrow(
+                'Cannot create generator from empty iterable',
+            );
         });
 
         it('cycles through values of an iterable', () => {
@@ -204,6 +225,13 @@ describe('Factory class functionality', () => {
             }
         });
 
+        it('throws error when given empty iterable', () => {
+            const factory = new Factory<TestObject>(() => defaultObject);
+            expect(() => factory.sample([])).toThrow(
+                'Cannot create generator from empty iterable',
+            );
+        });
+
         it('samples values from the iterable', () => {
             const factory = new Factory<ComplexObject>((factory, i) => ({
                 name: factory.person.firstName(),
@@ -231,8 +259,11 @@ describe('Factory class functionality', () => {
                 (factory) => ({
                     ...defaults,
                     options: {
-                        children: factory.use(complexFactory.batch, 2),
-                        type: '1',
+                        children: factory.use(
+                            complexFactory.batch.bind(complexFactory),
+                            2,
+                        ),
+                        type: '1' as const,
                     },
                 }),
             );
@@ -244,8 +275,206 @@ describe('Factory class functionality', () => {
         });
     });
 
+    describe('extend method', () => {
+        interface BaseUser {
+            createdAt: Date;
+            id: string;
+        }
+
+        interface AdminUser extends BaseUser {
+            permissions: string[];
+            role: string;
+        }
+
+        it('extends a base factory with additional properties', () => {
+            const BaseUserFactory = new Factory<BaseUser>((factory) => ({
+                createdAt: factory.date.recent(),
+                id: factory.string.uuid(),
+            }));
+
+            const AdminUserFactory = BaseUserFactory.extend<AdminUser>(
+                (factory) => ({
+                    createdAt: factory.date.recent(),
+                    id: factory.string.uuid(),
+                    permissions: ['read', 'write', 'delete'],
+                    role: 'admin',
+                }),
+            );
+
+            const admin = AdminUserFactory.build();
+            expect(admin.id).toBeDefined();
+            expect(admin.createdAt).toBeInstanceOf(Date);
+            expect(admin.role).toBe('admin');
+            expect(admin.permissions).toEqual(['read', 'write', 'delete']);
+        });
+
+        it('allows overriding base factory properties', () => {
+            const BaseUserFactory = new Factory<BaseUser>((factory) => ({
+                createdAt: factory.date.recent(),
+                id: factory.string.uuid(),
+            }));
+
+            const CustomUserFactory = BaseUserFactory.extend<BaseUser>(
+                (factory) => ({
+                    createdAt: factory.date.recent(),
+                    id: 'custom-id',
+                }),
+            );
+
+            const user = CustomUserFactory.build();
+            expect(user.id).toBe('custom-id');
+            expect(user.createdAt).toBeInstanceOf(Date);
+        });
+    });
+
+    describe('compose method', () => {
+        interface User {
+            email: string;
+            name: string;
+        }
+
+        interface Post {
+            content: string;
+            title: string;
+        }
+
+        interface UserWithPosts extends User {
+            posts: Post[];
+        }
+
+        interface UserWithStatus extends User {
+            status: string;
+        }
+
+        interface TreeNode {
+            children?: TreeNode[];
+            value: string;
+        }
+
+        it('composes a factory with other factories', () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                email: factory.internet.email(),
+                name: factory.person.fullName(),
+            }));
+
+            const PostFactory = new Factory<Post>((factory) => ({
+                content: factory.lorem.paragraph(),
+                title: factory.lorem.sentence(),
+            }));
+
+            const UserWithPostsFactory = UserFactory.compose<UserWithPosts>({
+                posts: PostFactory.batch(3),
+            });
+
+            const userWithPosts = UserWithPostsFactory.build();
+            expect(userWithPosts.email).toBeDefined();
+            expect(userWithPosts.name).toBeDefined();
+            expect(userWithPosts.posts).toHaveLength(3);
+            expect(userWithPosts.posts[0].title).toBeDefined();
+            expect(userWithPosts.posts[0].content).toBeDefined();
+        });
+
+        it('allows mixing factories with static values', () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                email: factory.internet.email(),
+                name: factory.person.fullName(),
+            }));
+
+            const UserWithStatusFactory = UserFactory.compose<UserWithStatus>({
+                status: 'active',
+            });
+
+            const user = UserWithStatusFactory.build();
+            expect(user.email).toBeDefined();
+            expect(user.name).toBeDefined();
+            expect(user.status).toBe('active');
+        });
+
+        it('handles circular references with depth control', () => {
+            const TreeNodeFactory = new Factory<TreeNode>(
+                (factory) => ({
+                    children: factory.batch(2), // Self-reference
+                    value: factory.string.alphanumeric(5),
+                }),
+                { maxDepth: 3 },
+            );
+
+            const tree = TreeNodeFactory.build();
+            expect(tree.value).toBeDefined();
+            expect(tree.children).toHaveLength(2);
+            expect(tree.children![0].children).toHaveLength(2);
+            expect(tree.children![0].children![0].children).toBeNull();
+        });
+
+        it('allows customizing max depth', () => {
+            const TreeNodeFactory = new Factory<TreeNode>(
+                (factory) => ({
+                    children: factory.batch(1),
+                    value: factory.string.alphanumeric(5),
+                }),
+                { maxDepth: 2 },
+            );
+
+            const tree = TreeNodeFactory.build();
+            expect(tree.value).toBeDefined();
+            expect(tree.children).toHaveLength(1);
+            expect(tree.children![0].children).toBeNull();
+        });
+
+        it('handles depth limit correctly with build overrides', () => {
+            const TreeNodeFactory = new Factory<TreeNode>(
+                (factory) => ({
+                    children: [factory.build({ value: 'child' })],
+                    value: factory.string.alphanumeric(5),
+                }),
+                { maxDepth: 2 },
+            );
+
+            const tree = TreeNodeFactory.build();
+            expect(tree.value).toBeDefined();
+            expect(tree.children).toHaveLength(1);
+            expect(tree.children![0].value).toBe('child');
+        });
+
+        it('returns null for batch when max depth exceeded', () => {
+            const TreeNodeFactory = new Factory<TreeNode>(
+                (factory) => ({
+                    children: factory.batch(2),
+                    value: 'node',
+                }),
+                { maxDepth: 1 },
+            );
+
+            const tree = TreeNodeFactory.build();
+            expect(tree.value).toBe('node');
+            expect(tree.children).toBeNull();
+        });
+
+        it('handles other factory methods through proxy', () => {
+            interface TestNode {
+                children?: TestNode[];
+                type: string;
+                value: string;
+            }
+
+            const TestNodeFactory = new Factory<TestNode>(
+                (factory) => ({
+                    children: factory.batch(1),
+                    type: factory.sample(['A', 'B', 'C']).next().value,
+                    value: factory.string.uuid(),
+                }),
+                { maxDepth: 2 },
+            );
+
+            const node = TestNodeFactory.build();
+            expect(node.value).toBeDefined();
+            expect(['A', 'B', 'C']).toContain(node.type);
+            expect(node.children).toHaveLength(1);
+        });
+    });
+
     describe('Factory Hooks', () => {
-        it('applies beforeBuild correctly', async () => {
+        it('applies synchronous beforeBuild hook in build()', () => {
             const UserFactory = new Factory<User>((factory) => ({
                 email: '',
                 firstName: factory.person.firstName(),
@@ -254,11 +483,11 @@ describe('Factory class functionality', () => {
                 return { ...params, firstName: 'alice' };
             });
 
-            const user = await UserFactory.buildWithHooks();
+            const user = UserFactory.build();
             expect(user.firstName).toBe('alice');
         });
 
-        it('apply afterBuild correctly', async () => {
+        it('applies synchronous afterBuild hook in build()', () => {
             const UserFactory = new Factory<User>((factory) => ({
                 email: '',
                 firstName: factory.person.firstName(),
@@ -268,17 +497,61 @@ describe('Factory class functionality', () => {
                 return user;
             });
 
-            const user = await UserFactory.buildWithHooks();
+            const user = UserFactory.build();
             expect(user.email).toBe(
                 `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`,
             );
         });
 
-        it('runs multiple hooks in the correct order', async () => {
+        it('throws ConfigurationError when async hook is used with build()', () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                email: '',
+                firstName: factory.person.firstName(),
+                lastName: factory.person.lastName(),
+            })).afterBuild(async (user) => {
+                await new Promise((resolve) => setTimeout(resolve, 1));
+                return user;
+            });
+
+            expect(() => UserFactory.build()).toThrow(
+                'Async hooks detected. Use buildAsync() method to build instances with async hooks.',
+            );
+        });
+
+        it('applies beforeBuild correctly with buildAsync()', async () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                email: '',
+                firstName: factory.person.firstName(),
+                lastName: factory.person.lastName(),
+            })).beforeBuild((params) => {
+                return { ...params, firstName: 'alice' };
+            });
+
+            const user = await UserFactory.buildAsync();
+            expect(user.firstName).toBe('alice');
+        });
+
+        it('applies afterBuild correctly with buildAsync()', async () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                email: '',
+                firstName: factory.person.firstName(),
+                lastName: factory.person.lastName(),
+            })).afterBuild((user) => {
+                user.email = `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`;
+                return user;
+            });
+
+            const user = await UserFactory.buildAsync();
+            expect(user.email).toBe(
+                `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`,
+            );
+        });
+
+        it('runs multiple synchronous hooks in the correct order', () => {
             const logs: string[] = [];
             const UserFactory = new Factory<User>(() => ({
                 email: '',
-                firstName: 'jhon',
+                firstName: 'john',
                 lastName: 'Doe',
             }))
                 .beforeBuild((b) => {
@@ -289,46 +562,98 @@ describe('Factory class functionality', () => {
                     logs.push('before2');
                     return b;
                 })
-                .beforeBuild((a) => {
+                .afterBuild((a) => {
                     logs.push('after1');
                     return a;
                 })
-                .beforeBuild((a) => {
+                .afterBuild((a) => {
                     logs.push('after2');
                     return a;
                 });
 
-            await UserFactory.buildWithHooks();
+            UserFactory.build();
             expect(logs).toEqual(['before1', 'before2', 'after1', 'after2']);
         });
 
-        it('handles errors in beforeBuild', async () => {
+        it('runs multiple hooks in the correct order with buildAsync', async () => {
+            const logs: string[] = [];
             const UserFactory = new Factory<User>(() => ({
                 email: '',
-                firstName: 'Jhon',
+                firstName: 'john',
+                lastName: 'Doe',
+            }))
+                .beforeBuild((b) => {
+                    logs.push('before1');
+                    return b;
+                })
+                .beforeBuild(async (b) => {
+                    await new Promise((resolve) => setTimeout(resolve, 1));
+                    logs.push('before2');
+                    return b;
+                })
+                .afterBuild((a) => {
+                    logs.push('after1');
+                    return a;
+                })
+                .afterBuild(async (a) => {
+                    await new Promise((resolve) => setTimeout(resolve, 1));
+                    logs.push('after2');
+                    return a;
+                });
+
+            await UserFactory.buildAsync();
+            expect(logs).toEqual(['before1', 'before2', 'after1', 'after2']);
+        });
+
+        it('handles errors in beforeBuild with build()', () => {
+            const UserFactory = new Factory<User>(() => ({
+                email: '',
+                firstName: 'John',
                 lastName: 'Doe',
             })).beforeBuild(() => {
                 throw new Error('Error in beforeBuild');
             });
-            await expect(UserFactory.buildWithHooks()).rejects.toThrow(
+            expect(() => UserFactory.build()).toThrow('Error in beforeBuild');
+        });
+
+        it('handles errors in beforeBuild with buildAsync()', async () => {
+            const UserFactory = new Factory<User>(() => ({
+                email: '',
+                firstName: 'John',
+                lastName: 'Doe',
+            })).beforeBuild(() => {
+                throw new Error('Error in beforeBuild');
+            });
+            await expect(UserFactory.buildAsync()).rejects.toThrow(
                 'Error in beforeBuild',
             );
         });
 
-        it('hadles errors in afterBuild', async () => {
+        it('handles errors in afterBuild with build()', () => {
             const UserFactory = new Factory<User>(() => ({
                 email: '',
-                firstName: 'Jhon',
+                firstName: 'John',
                 lastName: 'Doe',
-            })).beforeBuild(() => {
+            })).afterBuild(() => {
                 throw new Error('Error in afterBuild');
             });
-            await expect(UserFactory.buildWithHooks()).rejects.toThrow(
+            expect(() => UserFactory.build()).toThrow('Error in afterBuild');
+        });
+
+        it('handles errors in afterBuild with buildAsync()', async () => {
+            const UserFactory = new Factory<User>(() => ({
+                email: '',
+                firstName: 'John',
+                lastName: 'Doe',
+            })).afterBuild(() => {
+                throw new Error('Error in afterBuild');
+            });
+            await expect(UserFactory.buildAsync()).rejects.toThrow(
                 'Error in afterBuild',
             );
         });
 
-        it('allows synchronous and asynchronous hooks', async () => {
+        it('allows mixing synchronous and asynchronous hooks with buildAsync', async () => {
             const UserFactory = new Factory<User>((factory) => ({
                 email: '',
                 firstName: factory.person.firstName(),
@@ -343,16 +668,16 @@ describe('Factory class functionality', () => {
                     return user;
                 });
 
-            const user = await UserFactory.buildWithHooks();
+            const user = await UserFactory.buildAsync();
             expect(user.email).toBe(
                 `${user.firstName.toLowerCase()}.${user.lastName.toLowerCase()}@example.com`,
             );
         });
 
-        it('validates that the hooks return the correct type', async () => {
+        it('validates that hooks preserve type safety', () => {
             const UserFactory = new Factory<User>(() => ({
                 email: '',
-                firstName: 'Jhon',
+                firstName: 'John',
                 lastName: 'Doe',
             })).afterBuild((user) => {
                 return {
@@ -361,20 +686,20 @@ describe('Factory class functionality', () => {
                 };
             });
 
-            const user = await UserFactory.buildWithHooks();
-            expect(user.email).toBe('jhon.doe@example.com');
+            const user = UserFactory.build();
+            expect(user.email).toBe('john.doe@example.com');
         });
 
-        it('throws error if a hook returns an incorrect type', async () => {
+        it('throws error if a hook throws TypeError', () => {
             const UserFactory = new Factory<User>(() => ({
                 email: '',
-                firstName: 'jhon',
+                firstName: 'john',
                 lastName: 'doe',
             })).afterBuild(() => {
                 throw new TypeError('Incorrect type returned by hook');
             });
 
-            await expect(UserFactory.buildWithHooks()).rejects.toThrow(
+            expect(() => UserFactory.build()).toThrow(
                 'Incorrect type returned by hook',
             );
         });

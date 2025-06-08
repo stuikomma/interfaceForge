@@ -7,6 +7,18 @@
 
 Interface-Forge is a TypeScript library for creating strongly typed mock data factories. This library builds upon [Faker.js](https://fakerjs.dev/) by providing a simple and intuitive `Factory` class that extends the `Faker` class from [Faker.js](https://fakerjs.dev/).
 
+## Why Interface-Forge?
+
+- **Type-Safe by Design**: Full TypeScript support with compile-time type checking for all your test data
+- **Zero Learning Curve**: Extends Faker.js, so all Faker methods work out of the box—if you know Faker, you know Interface-Forge
+- **Powerful Composition**: Build complex object graphs with circular references using the `use()` method for lazy evaluation
+- **Flexible Overrides**: Easily customize any part of your generated data with the `build({ ... })` method
+- **Built for Testing**: Generate single instances, batches, or compose factories together—perfect for unit tests, integration tests, and storybooks
+
+📚 **[View Full API Documentation](https://goldziher.github.io/interface-forge/)**
+
+📂 **[Browse Example Code](./examples)** - See Interface-Forge in action with practical examples
+
 ## Table of Contents
 
 - [Interface-Forge](#interface-forge)
@@ -353,6 +365,100 @@ const user = UserWithStatusFactory.build();
 //     status: "active"
 // }
 ```
+
+#### `beforeBuild`
+
+Adds a hook that will be executed before building the instance. Hooks receive the partial parameters (kwargs) and can modify them before the instance is built.
+
+**Signature:**
+
+```typescript
+beforeBuild(hook: BeforeBuildHook<T>): this
+```
+
+**Usage:**
+
+```typescript
+const UserFactory = new Factory<User>((factory) => ({
+    id: factory.string.uuid(),
+    email: '',
+    username: '',
+})).beforeBuild((params) => {
+    // Auto-generate email from username if not provided
+    if (!params.email && params.username) {
+        params.email = `${params.username}@example.com`;
+    }
+    return params;
+});
+
+const user = UserFactory.build({ username: 'john_doe' });
+// user.email == "john_doe@example.com"
+```
+
+#### `afterBuild`
+
+Adds a hook that will be executed after building the instance. Hooks are executed in the order they were added and can be either synchronous or asynchronous.
+
+**Signature:**
+
+```typescript
+afterBuild(hook: AfterBuildHook<T>): this
+```
+
+**Usage:**
+
+```typescript
+const ProductFactory = new Factory<Product>((factory) => ({
+    id: factory.string.uuid(),
+    name: factory.commerce.productName(),
+    price: factory.number.float({ min: 10, max: 1000 }),
+    formattedPrice: '',
+})).afterBuild((product) => {
+    // Format price with currency
+    product.formattedPrice = `$${product.price.toFixed(2)}`;
+    return product;
+});
+
+const product = ProductFactory.build();
+// product.formattedPrice == "$123.45"
+```
+
+#### `buildAsync`
+
+Builds an instance asynchronously with all registered hooks applied in sequence. This method supports both synchronous and asynchronous hooks.
+
+**Signature:**
+
+```typescript
+buildAsync(kwargs?: Partial<T>): Promise<T>
+```
+
+**Usage:**
+
+```typescript
+const UserFactory = new Factory<User>((factory) => ({
+    id: factory.string.uuid(),
+    email: factory.internet.email(),
+    isVerified: false,
+})).afterBuild(async (user) => {
+    // Simulate API call to verify email
+    await verifyEmail(user.email);
+    user.isVerified = true;
+    return user;
+});
+
+// Must use buildAsync for async hooks
+const user = await UserFactory.buildAsync();
+// user.isVerified == true
+```
+
+**Important Hook Behavior:**
+
+- Synchronous hooks automatically work with `build()`
+- If async hooks are registered, `build()` will throw a `ConfigurationError`
+- Use `buildAsync()` when you have async hooks or want consistent async behavior
+- Hooks are executed in the order they were registered
+- Multiple hooks of the same type can be chained
 
 ## TypeScript Compatibility
 
