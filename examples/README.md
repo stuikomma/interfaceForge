@@ -65,6 +65,17 @@ Learn how to use hooks for data transformation and validation:
 - Conditional logic in hooks
 - Error handling and business rules
 
+### [07. Zod Integration](./07-zod-integration.ts)
+
+Integrate Interface-Forge with Zod schemas:
+
+- Creating factories from Zod schemas
+- Using custom generators for specific fields
+- Handling complex nested schemas
+- Working with Zod unions and optionals
+- Registering custom Zod type handlers
+- Performance considerations
+
 ## Running the Examples
 
 To run any example:

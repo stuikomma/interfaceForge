@@ -18,6 +18,24 @@ export {
 } from './errors';
 export { Ref } from './utils';
 
+export interface FactoryOptions {
+    /**
+     * The locale data to use for this instance.
+     * If an array is provided, the first locale that has a definition for a given property will be used.
+     */
+    locale?: LocaleDefinition | LocaleDefinition[];
+    /**
+     * Maximum recursion depth for nested factory references.
+     * Default is 10. Set to 0 to disable nested generation.
+     */
+    maxDepth?: number;
+    /**
+     * The Randomizer to use.
+     * Specify this only if you want to use it to achieve a specific goal,
+     * such as sharing the same random generator with other instances/tools.
+     */
+    randomizer?: Randomizer;
+}
 export type FactoryComposition<T> = {
     [K in keyof T]?: Factory<T[K]> | T[K];
 };
@@ -54,24 +72,7 @@ export class Factory<T> extends Faker {
 
     constructor(
         factory: FactoryFunction<T>,
-        options?: {
-            /**
-             * The locale data to use for this instance.
-             * If an array is provided, the first locale that has a definition for a given property will be used.
-             */
-            locale?: LocaleDefinition | LocaleDefinition[];
-            /**
-             * Maximum recursion depth for nested factory references.
-             * Default is 10. Set to 0 to disable nested generation.
-             */
-            maxDepth?: number;
-            /**
-             * The Randomizer to use.
-             * Specify this only if you want to use it to achieve a specific goal,
-             * such as sharing the same random generator with other instances/tools.
-             */
-            randomizer?: Randomizer;
-        },
+        options?: FactoryOptions,
     ) {
         super({
             locale: options?.locale ?? en,

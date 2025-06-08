@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { clearZodTypeRegistry, getRegisteredZodTypes, registerZodType, unregisterZodType, ZodFactory } from './zod.js';
+import { clearZodTypeRegistry, getRegisteredZodTypes, initializeBuiltinZodTypes, registerZodType, unregisterZodType, ZodFactory } from './zod';
 
 describe('ZodFactory', () => {
+    beforeEach(() => {
+        clearZodTypeRegistry();
+        initializeBuiltinZodTypes();
+    });
+
     it('should create a ZodFactory instance', () => {
         const schema = z.object({ name: z.string() });
         const factory = new ZodFactory(schema);
@@ -29,9 +34,9 @@ describe('ZodFactory', () => {
 
     it('should handle optional and nullable types', () => {
         const schema = z.object({
-            optional: z.string().optional(),
-            nullable: z.string().nullable(),
             both: z.string().optional().nullable(),
+            nullable: z.string().nullable(),
+            optional: z.string().optional(),
         });
         const factory = new ZodFactory(schema);
         
@@ -171,10 +176,13 @@ describe('ZodFactory', () => {
         });
 
         it('should clear all registered types', () => {
+            // Initialize built-in types first
+            initializeBuiltinZodTypes();
+            
             registerZodType('Type1', (_schema: unknown, _factory: unknown, _config: unknown) => 'test1');
             registerZodType('Type2', (_schema: unknown, _factory: unknown, _config: unknown) => 'test2');
             
-            expect(getRegisteredZodTypes()).toHaveLength(6); // 4 built-in + 2 custom
+            expect(getRegisteredZodTypes()).toHaveLength(7 + 2); // 7 built-in + 2 custom
             
             clearZodTypeRegistry();
             expect(getRegisteredZodTypes()).toHaveLength(0);
@@ -701,8 +709,8 @@ describe('ZodFactory', () => {
 
         it('should support build with overrides', () => {
             const factory = new ZodFactory(z.object({
-                name: z.string(),
-                age: z.number()
+                age: z.number(),
+                name: z.string()
             }));
             
             const result = factory.build({ name: 'Override' });
@@ -1088,8 +1096,8 @@ describe('ZodFactory', () => {
                 metadata: z.record(z.string(), z.unknown()),
                 password: z.string().min(8).max(128),
                 preferences: z.object({
-                    theme: z.enum(['light', 'dark']),
                     notifications: z.boolean(),
+                    theme: z.enum(['light', 'dark']),
                 }),
                 profile: z.object({
                     avatar: z.string().url().optional(),

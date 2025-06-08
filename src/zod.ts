@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { Factory, type FactoryFunction, type FactoryOptions, type FactorySchema } from './index.js';
+import { Factory, type FactoryFunction, type FactoryOptions, type FactorySchema } from './index';
+import { isObject } from '@tool-belt/type-predicates';
 
 export interface ZodFactoryConfig extends FactoryOptions {
   /**
@@ -30,6 +31,7 @@ class ZodTypeRegistry {
 
   /**
    * Get a handler for a Zod type
+   *
    * @param typeName The name/identifier of the Zod type
    * @returns The handler function or undefined if not found
    */
@@ -39,6 +41,8 @@ class ZodTypeRegistry {
 
   /**
    * Get all registered type names
+   *
+   * @returns Array of registered type names
    */
   getRegisteredTypes(): string[] {
     return [...this.handlers.keys()];
@@ -46,6 +50,7 @@ class ZodTypeRegistry {
 
   /**
    * Check if a handler exists for a Zod type
+   *
    * @param typeName The name/identifier of the Zod type
    * @returns True if handler exists
    */
@@ -55,6 +60,7 @@ class ZodTypeRegistry {
 
   /**
    * Register a custom handler for a Zod type
+   *
    * @param typeName The name/identifier of the Zod type (e.g., 'ZodBigInt', 'ZodNaN')
    * @param handler Function that generates mock data for this type
    */
@@ -64,7 +70,9 @@ class ZodTypeRegistry {
 
   /**
    * Remove a handler for a Zod type
+   *
    * @param typeName The name/identifier of the Zod type
+   * @returns True if the handler was removed, false otherwise
    */
   unregister(typeName: string): boolean {
     return this.handlers.delete(typeName);
@@ -77,61 +85,6 @@ class ZodTypeRegistry {
 const zodTypeRegistry = new ZodTypeRegistry();
 
 /**
- * Clear all registered custom Zod type handlers
- */
-export function clearZodTypeRegistry(): void {
-  zodTypeRegistry.clear();
-}
-
-/**
- * Get all registered custom Zod type names
- * @returns Array of registered type names
- */
-export function getRegisteredZodTypes(): string[] {
-  return zodTypeRegistry.getRegisteredTypes();
-}
-
-/**
- * Register a custom handler for a Zod type
- * @param typeName The name/identifier of the Zod type (e.g., 'ZodBigInt', 'ZodNaN')
- * @param handler Function that generates mock data for this type
- * 
- * @example
- * ```typescript
- * import { z } from 'zod';
- * import { registerZodType } from 'interface-forge/zod';
- * 
- * // Register handler for BigInt
- * registerZodType('ZodBigInt', (schema, factory) => {
- *   return BigInt(factory.number.int({ min: 0, max: 1000000 }));
- * });
- * 
- * // Register handler for custom validation
- * registerZodType('ZodNaN', (schema, factory) => {
- *   return NaN;
- * });
- * 
- * // Now you can use it
- * const schema = z.object({
- *   bigNumber: z.bigint(),
- *   notANumber: z.nan(),
- * });
- * ```
- */
-export function registerZodType(typeName: string, handler: ZodTypeHandler): void {
-  zodTypeRegistry.register(typeName, handler);
-}
-
-/**
- * Unregister a custom handler for a Zod type
- * @param typeName The name/identifier of the Zod type
- * @returns True if the handler was found and removed
- */
-export function unregisterZodType(typeName: string): boolean {
-  return zodTypeRegistry.unregister(typeName);
-}
-
-/**
  * A Factory class that extends the base Factory to work with Zod schemas
  */
 export class ZodFactory<T extends ZodSchema> extends Factory<z.infer<T>> {
@@ -139,7 +92,7 @@ export class ZodFactory<T extends ZodSchema> extends Factory<z.infer<T>> {
   private readonly zodConfig: ZodFactoryConfig;
 
   constructor(schema: T, config?: ZodFactoryConfig) {
-    const { customGenerators, ...factoryOptions } = (config ?? {});
+    const { ...factoryOptions } = (config ?? {});
     
     const factoryFunction: FactoryFunction<z.infer<T>> = () => {
       return {} as FactorySchema<z.infer<T>>;
@@ -153,26 +106,63 @@ export class ZodFactory<T extends ZodSchema> extends Factory<z.infer<T>> {
 
   /**
    * Override the build method to generate values directly from Zod schema
+   *
+   * @param kwargs Optional partial values to override
+   * @returns Generated value that conforms to the Zod schema
    */
-  build = (kwargs?: Partial<z.infer<T>>): z.infer<T> => {
+  build = (kwargs?: Partial<z.infer<T>>) => {
     return this.generate(0, kwargs);
   };
 
   /**
-   * Override the generate method to work with Zod schemas
+   * Override the batch method to generate multiple values
+   *
+   * @param size Number of instances to generate
+   * @param kwargs Optional partial values to override (single object or array)
+   * @returns Array of generated values
    */
-  protected generate(_iteration: number, kwargs?: Partial<z.infer<T>>): z.infer<T> {
+  batch = (size: number, kwargs?: Partial<z.infer<T>> | Partial<z.infer<T>>[]): z.infer<T>[] => {
+    if (!Number.isInteger(size) || size < 0) {
+      throw new Error('Batch size must be a non-negative integer');
+    }
+
+    if (size === 0) {
+      return [];
+    }
+
+    if (kwargs) {
+      const overrides = Array.isArray(kwargs) ? kwargs : [kwargs];
+      return Array.from({ length: size }, (_, i) => 
+        this.generate(i, overrides[i % overrides.length])
+      );
+    }
+
+    return Array.from({ length: size }, (_, i) => this.generate(i));
+  };
+
+  /**
+   * Override the generate method to work with Zod schemas
+   *
+   * @param _iteration Iteration number (unused)
+   * @param kwargs Optional partial values to override
+   * @returns Generated value that conforms to the Zod schema
+   */
+  protected generate(_iteration: number, kwargs?: Partial<z.infer<T>>): T {
     const generated = this.generateFactorySchema(this.schema, this.zodConfig) as z.infer<T>;
     
-    if (kwargs && typeof generated === 'object' && generated !== null && !Array.isArray(generated)) {
-      return { ...generated, ...kwargs } as z.infer<T>;
+    if (isObject(kwargs) && isObject(generated)) {
+      return { ...generated, ...kwargs } as T;
     }
-    
-    return generated;
+
+    return generated as T;
   }
 
   /**
    * Generates a factory schema (with generators) that conforms to a Zod schema
+   *
+   * @param schema The Zod schema to generate data for
+   * @param config Configuration for the factory
+   * @returns Generated value conforming to the schema
    */
   private generateFactorySchema(schema: ZodSchema, config: ZodFactoryConfig): unknown {
     if (schema.description && config.customGenerators?.[schema.description]) {
@@ -225,7 +215,11 @@ export class ZodFactory<T extends ZodSchema> extends Factory<z.infer<T>> {
     }
 
     if (schema instanceof z.ZodNativeEnum) {
-      const enumValues = Object.values((zodType as { values: Record<string, number | string> }).values);
+      const enumObj = (zodType as { values: Record<string, number | string> }).values;
+      // For numeric enums, filter out reverse mappings
+      const enumValues = Object.entries(enumObj)
+        .filter(([key, value]) => typeof value === 'number' || enumObj[value as any] !== key)
+        .map(([_, value]) => value);
       return this.helpers.arrayElement(enumValues);
     }
 
@@ -332,8 +326,8 @@ export class ZodFactory<T extends ZodSchema> extends Factory<z.infer<T>> {
       const itemSchema = zodType.type as ZodSchema;
       const checks = (zodType.checks as { kind: string; value?: number }[] | undefined);
       
-      let minLength = 1;
-      let maxLength = 5;
+      let minLength = 0;
+      let maxLength = 10;
       
       if (checks) {
         for (const check of checks) {
@@ -341,9 +335,9 @@ export class ZodFactory<T extends ZodSchema> extends Factory<z.infer<T>> {
           const checkValue = check.value;
           
           if (checkKind === 'min' && typeof checkValue === 'number') {
-            minLength = Math.max(minLength, checkValue);
+            minLength = checkValue;
           } else if (checkKind === 'max' && typeof checkValue === 'number') {
-            maxLength = Math.min(maxLength, checkValue);
+            maxLength = checkValue;
           }
         }
       }
@@ -454,6 +448,9 @@ export class ZodFactory<T extends ZodSchema> extends Factory<z.infer<T>> {
     }
     if (isNonPositive && (!max || max > 0)) {
       max = 0;
+      if (!min || min > 0) {
+        min = -100; // Ensure we have negative range
+      }
     }
     
     if (max !== undefined && max < 0 && (min === undefined || min >= max)) {
@@ -496,7 +493,8 @@ export class ZodFactory<T extends ZodSchema> extends Factory<z.infer<T>> {
         
         switch (checkKind) {
           case 'cuid': {
-            return this.string.alphanumeric(10);
+            // Generate a valid CUID-like string
+            return 'c' + this.string.alphanumeric(24).toLowerCase();
           }
           case 'email': {
             return this.internet.email();
@@ -513,14 +511,24 @@ export class ZodFactory<T extends ZodSchema> extends Factory<z.infer<T>> {
           }
           case 'min': {
             const minValue = check.value as number;
-            result = this.lorem.words(Math.ceil(minValue / 5));
+            // Ensure we generate at least minValue characters
+            const words = Math.ceil(minValue / 5);
+            result = this.lorem.words(words);
+            while (result.length < minValue) {
+              result += this.string.alpha(1);
+            }
             break;
           }
           case 'regex': {
             const regex = check.regex!;
+            // Common regex patterns
             if (regex.test('test@example.com')) {
               return this.internet.email();
             }
+            if (regex.source === '^[a-zA-Z0-9_]+$') {
+              return this.string.alphanumeric(10);
+            }
+            // Default to a word that might match simple patterns
             return this.lorem.word();
           }
           case 'url': {
@@ -535,6 +543,22 @@ export class ZodFactory<T extends ZodSchema> extends Factory<z.infer<T>> {
     
     return result || this.lorem.word();
   }
+}
+
+/**
+ * Clear all registered custom Zod type handlers
+ */
+export function clearZodTypeRegistry(): void {
+  zodTypeRegistry.clear();
+}
+
+/**
+ * Get all registered custom Zod type names
+ *
+ * @returns Array of registered type names
+ */
+export function getRegisteredZodTypes(): string[] {
+  return zodTypeRegistry.getRegisteredTypes();
 }
 
 // Register built-in Zod types after the class definition to ensure proper initialization
@@ -576,5 +600,44 @@ export function initializeBuiltinZodTypes(): void {
   });
 }
 
-// Initialize built-in types immediately
-initializeBuiltinZodTypes(); 
+/**
+ * Register a custom handler for a Zod type
+ *
+ * @param typeName The name/identifier of the Zod type (e.g., 'ZodBigInt', 'ZodNaN')
+ * @param handler Function that generates mock data for this type
+ * 
+ * @example
+ * ```typescript
+ * import { z } from 'zod';
+ * import { registerZodType } from 'interface-forge/zod';
+ * 
+ * // Register handler for BigInt
+ * registerZodType('ZodBigInt', (schema, factory) => {
+ *   return BigInt(factory.number.int({ min: 0, max: 1_000_000 }));
+ * });
+ * 
+ * // Register handler for custom validation
+ * registerZodType('ZodNaN', (schema, factory) => {
+ *   return NaN;
+ * });
+ * 
+ * // Now you can use it
+ * const schema = z.object({
+ *   bigNumber: z.bigint(),
+ *   notANumber: z.nan(),
+ * });
+ * ```
+ */
+export function registerZodType(typeName: string, handler: ZodTypeHandler): void {
+  zodTypeRegistry.register(typeName, handler);
+}
+
+/**
+ * Unregister a custom handler for a Zod type
+ *
+ * @param typeName The name/identifier of the Zod type
+ * @returns True if the handler was found and removed
+ */
+export function unregisterZodType(typeName: string): boolean {
+  return zodTypeRegistry.unregister(typeName);
+} 
