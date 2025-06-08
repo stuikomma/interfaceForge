@@ -7,54 +7,48 @@
  * - Handling complex nested schemas
  * - Working with Zod unions and optionals
  * - Registering custom Zod type handlers
- * 
+ *
  * Note: This requires the 'zod' package to be installed
  */
 
-import { z } from 'zod';
-import { 
-    clearZodTypeRegistry, 
-    initializeBuiltinZodTypes, 
+import { z } from 'zod/v4';
+import {
+    clearZodTypeRegistry,
+    initializeBuiltinZodTypes,
     registerZodType,
-    ZodFactory 
-} from '../src/zod';
+    ZodFactory,
+} from 'interface-forge/zod';
 
-// Initialize built-in Zod type handlers
 initializeBuiltinZodTypes();
 
-// 1. Basic User Schema
 const UserSchema = z.object({
     age: z.number().int().min(18).max(120),
     createdAt: z.date(),
-    email: z.string().email(),
-    id: z.string().uuid(),
+    email: z.email(),
+    id: z.uuid(),
     isActive: z.boolean(),
     name: z.string().min(1).max(100),
 });
 
 const userFactory = new ZodFactory(UserSchema);
 
-// Generate a single user
 const user = userFactory.build();
 console.log('Generated user:', user);
 
-// Generate multiple users
 const users = userFactory.batch(3);
 console.log(`Generated ${users.length} users`);
 
-// Build with overrides
 const customUser = userFactory.build({
     email: 'john.doe@example.com',
     name: 'John Doe',
 });
 console.log('User with overrides:', customUser);
 
-// 2. Complex E-commerce Product Schema
 const ProductSchema = z.object({
     category: z.enum(['electronics', 'clothing', 'books', 'home', 'sports']),
     createdAt: z.date(),
     description: z.string().optional(),
-    id: z.string().uuid(),
+    id: z.uuid(),
     inStock: z.boolean(),
     name: z.string().min(1).max(200),
     price: z.number().min(0).max(99_999.99),
@@ -71,7 +65,7 @@ const ProductSchema = z.object({
                 id: z.string(),
                 name: z.string(),
                 price: z.number().min(0),
-            })
+            }),
         )
         .optional(),
 });
@@ -86,12 +80,11 @@ console.log('Generated product:', {
     variantCount: product.variants?.length ?? 0,
 });
 
-// 3. Nested Schema with Relationships
 const EmployeeSchema = z.object({
     department: z.enum(['engineering', 'marketing', 'sales', 'hr', 'finance']),
-    email: z.string().email(),
+    email: z.email(),
     firstName: z.string().min(1),
-    id: z.string().uuid(),
+    id: z.uuid(),
     isActive: z.boolean(),
     lastName: z.string().min(1),
     position: z.string(),
@@ -110,11 +103,11 @@ const CompanySchema = z.object({
     }),
     employees: z.array(EmployeeSchema).min(1).max(10),
     foundedAt: z.date(),
-    id: z.string().uuid(),
+    id: z.uuid(),
     industry: z.string(),
     name: z.string().min(1),
     revenue: z.number().min(0).optional(),
-    website: z.string().url().optional(),
+    website: z.url().optional(),
 });
 
 const companyFactory = new ZodFactory(CompanySchema);
@@ -125,7 +118,6 @@ console.log('Generated company:', {
     name: company.name,
 });
 
-// 4. Union Types
 const EventSchema = z.union([
     z.object({
         coordinates: z.object({
@@ -156,7 +148,6 @@ events.forEach((event) => {
     console.log(`Event type: ${event.type}`);
 });
 
-// 5. Custom Generators
 const OrderSchema = z.object({
     createdAt: z.date(),
     customerId: z.string().describe('customer-id'),
@@ -164,15 +155,24 @@ const OrderSchema = z.object({
     notes: z.string().optional(),
     productId: z.string().describe('product-id'),
     quantity: z.number().int().min(1).max(100),
-    status: z.enum(['pending', 'processing', 'shipped', 'delivered', 'cancelled']),
+    status: z.enum([
+        'pending',
+        'processing',
+        'shipped',
+        'delivered',
+        'cancelled',
+    ]),
     total: z.number().min(0),
 });
 
 const orderFactory = new ZodFactory(OrderSchema, {
     customGenerators: {
-        'customer-id': () => `CUST-${Math.random().toString(36).slice(2, 12).toUpperCase()}`,
-        'order-id': () => `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
-        'product-id': () => `PROD-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
+        'customer-id': () =>
+            `CUST-${Math.random().toString(36).slice(2, 12).toUpperCase()}`,
+        'order-id': () =>
+            `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
+        'product-id': () =>
+            `PROD-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
     },
 });
 
@@ -183,14 +183,13 @@ console.log('Order with custom IDs:', {
     productId: order.productId,
 });
 
-// 6. Optional and Nullable Fields
 const UserProfileSchema = z.object({
-    avatar: z.string().url().optional(),
+    avatar: z.url().optional(),
     bio: z.string().max(500).nullable(),
     createdAt: z.date(),
     displayName: z.string().optional(),
-    email: z.string().email(),
-    id: z.string().uuid(),
+    email: z.email(),
+    id: z.uuid(),
     lastLoginAt: z.date().nullable(),
     settings: z.object({
         notifications: z.object({
@@ -210,8 +209,8 @@ const UserProfileSchema = z.object({
         .array(
             z.object({
                 platform: z.enum(['twitter', 'linkedin', 'github', 'website']),
-                url: z.string().url(),
-            })
+                url: z.url(),
+            }),
         )
         .optional(),
     username: z.string().min(3).max(30),
@@ -228,14 +227,12 @@ profiles.forEach((profile, index) => {
     });
 });
 
-// 7. Custom Zod Type Registration
-// Register a handler for BigInt type
 registerZodType('ZodBigInt', (_schema, factory) => {
     return BigInt(factory.number.int({ max: 1_000_000, min: 0 }));
 });
 
-// Register a handler for custom validation types
 registerZodType('ZodCustomValidation', (schema, factory) => {
+    // @ts-expect-error - accessing internal _def for custom validation
     const zodType = schema._def as Record<string, unknown>;
     const validationType = zodType.validationType as string;
 
@@ -255,9 +252,8 @@ registerZodType('ZodCustomValidation', (schema, factory) => {
     }
 });
 
-// Performance test
 const SimpleSchema = z.object({
-    id: z.string().uuid(),
+    id: z.uuid(),
     name: z.string(),
     timestamp: z.date(),
     value: z.number(),
@@ -268,14 +264,19 @@ const startTime = Date.now();
 const largeDataset = simpleFactory.batch(1000);
 const endTime = Date.now();
 
-console.log(`Generated ${largeDataset.length} objects in ${endTime - startTime}ms`);
+console.log(
+    `Generated ${largeDataset.length} objects in ${endTime - startTime}ms`,
+);
 
-// Validation test
 const StrictSchema = z.object({
     age: z.number().int().min(18).max(100),
-    email: z.string().email(),
-    username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/),
-    website: z.string().url().optional(),
+    email: z.email(),
+    username: z
+        .string()
+        .min(3)
+        .max(20)
+        .regex(/^[a-zA-Z0-9_]+$/),
+    website: z.url().optional(),
 });
 
 const strictFactory = new ZodFactory(StrictSchema);
@@ -287,11 +288,10 @@ testData.forEach((data) => {
         StrictSchema.parse(data);
         validCount++;
     } catch {
-        // Invalid data
+        // Validation failed - this is expected for some generated data
     }
 });
 
 console.log(`Validation: ${validCount}/${testData.length} objects passed`);
 
-// Clean up custom registrations
 clearZodTypeRegistry();

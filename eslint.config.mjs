@@ -202,6 +202,7 @@ export default eslintTS.config(
             },
         },
         rules: {
+            '@typescript-eslint/no-explicit-any': 'off',
             'no-console': 'off',
             'unicorn/prefer-top-level-await': 'off',
         },

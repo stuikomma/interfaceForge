@@ -12,7 +12,7 @@
  * - Error handling with hooks
  */
 
-import { Factory } from '../src';
+import { Factory } from 'interface-forge';
 
 // Example 1: Basic data transformation with synchronous hooks
 interface User {

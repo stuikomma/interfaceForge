@@ -18,6 +18,13 @@ export {
 } from './errors';
 export { Ref } from './utils';
 
+export type FactoryComposition<T> = {
+    [K in keyof T]?: Factory<T[K]> | T[K];
+};
+export type FactoryFunction<T> = (
+    factory: Factory<T>,
+    iteration: number,
+) => FactorySchema<T>;
 export interface FactoryOptions {
     /**
      * The locale data to use for this instance.
@@ -36,14 +43,6 @@ export interface FactoryOptions {
      */
     randomizer?: Randomizer;
 }
-export type FactoryComposition<T> = {
-    [K in keyof T]?: Factory<T[K]> | T[K];
-};
-
-export type FactoryFunction<T> = (
-    factory: Factory<T>,
-    iteration: number,
-) => FactorySchema<T>;
 
 export type FactorySchema<T> = {
     [K in keyof T]:
@@ -70,10 +69,7 @@ export class Factory<T> extends Faker {
     private readonly factory: FactoryFunction<T>;
     private readonly maxDepth: number;
 
-    constructor(
-        factory: FactoryFunction<T>,
-        options?: FactoryOptions,
-    ) {
+    constructor(factory: FactoryFunction<T>, options?: FactoryOptions) {
         super({
             locale: options?.locale ?? en,
             randomizer: options?.randomizer,
@@ -249,7 +245,6 @@ export class Factory<T> extends Faker {
      * const userWithHooks = FactoryWithHooks.build(); // Hooks are applied automatically
      */
     build = (kwargs?: Partial<T>): T => {
-        // Check for async hooks
         const hasAsyncHooks =
             this.beforeBuildHooks.some((hook) => isAsyncFunction(hook)) ||
             this.afterBuildHooks.some((hook) => isAsyncFunction(hook));
@@ -262,15 +257,12 @@ export class Factory<T> extends Faker {
 
         let params = kwargs ?? {};
 
-        // Apply synchronous beforeBuild hooks
         for (const hook of this.beforeBuildHooks) {
             params = hook(params) as Partial<T>;
         }
 
-        // Generate the instance
         let result = this.#generate(0, params, 0);
 
-        // Apply synchronous afterBuild hooks
         for (const hook of this.afterBuildHooks) {
             result = hook(result) as T;
         }
@@ -333,15 +325,12 @@ export class Factory<T> extends Faker {
     async buildAsync(kwargs?: Partial<T>): Promise<T> {
         let params = kwargs ?? {};
 
-        // Apply beforeBuild hooks
         for (const hook of this.beforeBuildHooks) {
             params = await hook(params);
         }
 
-        // Generate the instance (without hooks, since we're applying them here)
         let result = this.#generate(0, params, 0);
 
-        // Apply afterBuild hooks
         for (const hook of this.afterBuildHooks) {
             result = await hook(result);
         }
@@ -514,11 +503,9 @@ export class Factory<T> extends Faker {
 
     #generate(iteration: number, kwargs?: Partial<T>, depth = 0): T {
         if (depth >= this.maxDepth) {
-            // Return null/undefined for nested factories when max depth is reached
             return null as T;
         }
 
-        // Create a depth-limited version of this factory for nested calls
         const depthLimitedFactory = new Proxy(this, {
             get(target, prop) {
                 if (prop === 'build') {

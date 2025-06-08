@@ -31,7 +31,6 @@ const defaults: ComplexObject = {
     value: null,
 };
 
-// Simulation of an asynchronous validation function
 async function validateUser(user: User): Promise<void> {
     return new Promise((resolve, reject) => {
         setTimeout(() => {
@@ -182,7 +181,7 @@ describe('Factory class functionality', () => {
             const factory = new Factory<TestObject>(() => defaultObject);
             const values = ['Value 1', 'Value 2', 'Value 3'];
             const generator = factory.iterate(values);
-            const cycleLength = values.length * 2; // Test two full cycles
+            const cycleLength = values.length * 2;
             const results = Array.from(
                 { length: cycleLength },
                 () => generator.next().value,
@@ -393,7 +392,7 @@ describe('Factory class functionality', () => {
         it('handles circular references with depth control', () => {
             const TreeNodeFactory = new Factory<TreeNode>(
                 (factory) => ({
-                    children: factory.batch(2), // Self-reference
+                    children: factory.batch(2),
                     value: factory.string.alphanumeric(5),
                 }),
                 { maxDepth: 3 },

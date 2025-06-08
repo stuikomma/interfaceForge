@@ -8,8 +8,7 @@
  * - Overriding default values
  */
 
-import { Factory } from '../src';
-import { Faker } from '@faker-js/faker';
+import { Factory } from 'interface-forge';
 
 // Define your TypeScript interface
 interface User {
@@ -22,13 +21,13 @@ interface User {
 }
 
 // Create a factory for the User interface
-const UserFactory = new Factory<User>((faker: Faker) => ({
-    age: faker.number.int({ max: 80, min: 18 }),
-    createdAt: faker.date.past(),
-    email: faker.internet.email(),
-    id: faker.string.uuid(),
-    isActive: faker.datatype.boolean(),
-    name: faker.person.fullName(),
+const UserFactory = new Factory<User>((factory) => ({
+    age: factory.number.int({ max: 80, min: 18 }),
+    createdAt: factory.date.past(),
+    email: factory.internet.email(),
+    id: factory.string.uuid(),
+    isActive: factory.datatype.boolean(),
+    name: factory.person.fullName(),
 }));
 
 // Example 1: Build a single user
