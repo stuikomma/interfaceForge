@@ -131,7 +131,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
      * @param kwargs Optional partial values to override (single object or array)
      * @returns Array of generated values
      */
-    batch = (size: number, kwargs?: Partial<T> | Partial<T>[]) => {
+    batch = (size: number, kwargs?: Partial<z.output<T>> | Partial<z.output<T>>[]) => {
         if (!Number.isInteger(size) || size < 0) {
             throw new Error('Batch size must be a non-negative integer');
         }
@@ -148,7 +148,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             );
         }
 
-        return Array.from({ length: size }, (_, i) => this.generate(i)) as T[];
+        return Array.from({ length: size }, (_, i) => this.generate(i));
     };
 
     /**
@@ -157,7 +157,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
      * @param kwargs Optional partial values to override
      * @returns Generated value that conforms to the Zod schema
      */
-    build = (kwargs?: Partial<T>): T => {
+    build = (kwargs?: Partial<z.output<T>>): z.output<T> => {
         return this.generate(0, kwargs);
     };
 
@@ -197,12 +197,12 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             }
             if (schema instanceof z.ZodString) {
                 const stringSchema = schema;
-                if (stringSchema.def.checks) {
-                    for (const check of stringSchema.def.checks) {
-                        if (check._zod.def.check === 'uuid') {
+                if (stringSchema._zod.def.checks) {
+                    for (const check of stringSchema._zod.def.checks) {
+                        if ((check as any).check === 'uuid') {
                             return this.string.uuid();
                         }
-                        if (check._zod.def.check === 'email') {
+                        if ((check as any).check === 'email') {
                             return this.internet.email();
                         }
                     }
@@ -227,10 +227,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             _currentDepth: currentDepth + 1,
         };
 
-        const description = Reflect.get(
-            schema._zod.output as object,
-            'description',
-        ) as string | undefined;
+        const description = (schema._zod as any).description as string | undefined;
 
         if (description && config.customGenerators?.[description]) {
             return config.customGenerators[description]();
@@ -275,18 +272,17 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         }
 
         if (schema instanceof z.ZodLiteral) {
-            return schema.def.values[0];
+            return schema._zod.def.values[0];
         }
 
         if (schema instanceof z.ZodEnum) {
-            const { values } = schema._zod; // this is an error we have to address by inspecting the v4 type
-            return this.helpers.arrayElement(
-                (values as readonly unknown[] | undefined) ?? [],
-            );
+            const entries = schema._zod.def.entries;
+            const values = Object.values(entries);
+            return this.helpers.arrayElement(values);
         }
 
         if (schema instanceof z.ZodTuple) {
-            const { items, rest } = schema.def;
+            const { items, rest } = schema._zod.def;
 
             const result = items.map((itemSchema: $ZodType) =>
                 this.generateFactorySchema(itemSchema, newConfig),
@@ -303,7 +299,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         }
 
         if (schema instanceof z.ZodMap) {
-            const { keyType, valueType } = schema.def;
+            const { keyType, valueType } = schema._zod.def;
 
             const map = new Map();
             const size = this.number.int({ max: 5, min: 1 });
@@ -318,7 +314,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         }
 
         if (schema instanceof z.ZodSet) {
-            const { valueType } = schema.def;
+            const { valueType } = schema._zod.def;
 
             const set = new Set();
             const size = this.number.int({ max: 5, min: 1 });
@@ -336,34 +332,34 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         }
 
         if (schema instanceof z.ZodDefault) {
-            return this.generateFactorySchema(schema.def.innerType, newConfig);
+            return this.generateFactorySchema(schema._zod.def.innerType, newConfig);
         }
 
         if (schema instanceof z.ZodCatch) {
-            return this.generateFactorySchema(schema.def.innerType, newConfig);
+            return this.generateFactorySchema(schema._zod.def.innerType, newConfig);
         }
 
         if (schema instanceof z.ZodUnion) {
             const randomOption = this.helpers.arrayElement(
-                schema.def.options as $ZodType[],
+                schema._zod.def.options as $ZodType[],
             );
             return this.generateFactorySchema(randomOption, newConfig);
         }
 
         if (schema instanceof z.ZodDiscriminatedUnion) {
-            const optionsMap = schema.def.options as Map<string, $ZodType>;
-            const options = [...optionsMap.values()];
-            const randomOption = this.helpers.arrayElement(options);
+            const options = schema._zod.def.options;
+            const optionsArray = Array.isArray(options) ? options : Object.values(options);
+            const randomOption = this.helpers.arrayElement(optionsArray);
             return this.generateFactorySchema(randomOption, newConfig);
         }
 
         if (schema instanceof z.ZodIntersection) {
             const leftResult = this.generateFactorySchema(
-                schema.def.left,
+                schema._zod.def.left,
                 newConfig,
             );
             const rightResult = this.generateFactorySchema(
-                schema.def.right,
+                schema._zod.def.right,
                 newConfig,
             );
 
@@ -381,7 +377,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         if (schema instanceof z.ZodOptional) {
             if (this.datatype.boolean({ probability: 0.7 })) {
                 return this.generateFactorySchema(
-                    schema.def.innerType,
+                    schema._zod.def.innerType,
                     newConfig,
                 );
             }
@@ -391,7 +387,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         if (schema instanceof z.ZodNullable) {
             if (this.datatype.boolean({ probability: 0.8 })) {
                 return this.generateFactorySchema(
-                    schema.def.innerType,
+                    schema._zod.def.innerType,
                     newConfig,
                 );
             }
@@ -399,7 +395,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         }
 
         if (schema instanceof z.ZodArray) {
-            const itemSchema = schema.def.type as $ZodType;
+            const itemSchema = schema._zod.def.element || schema._zod.def.type;
 
             let minLength = 0;
             let maxLength = 10;
@@ -408,7 +404,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
 
             // Array length constraints are in checks in Zod v4
 
-            const checks = schema.def.checks as
+            const checks = schema._zod.def.checks as
                 | { kind: string; value?: number }[]
                 | undefined;
             if (checks) {
@@ -452,14 +448,14 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             });
 
             return Array.from({ length }, () =>
-                this.generateFactorySchema(itemSchema, newConfig),
+                this.generateFactorySchema(itemSchema as $ZodType, newConfig),
             );
         }
 
         if (schema instanceof z.ZodObject) {
             const result: Record<string, unknown> = {};
 
-            for (const [key, fieldSchema] of Object.entries(schema.def.shape)) {
+            for (const [key, fieldSchema] of Object.entries(schema._zod.def.shape)) {
                 result[key] = this.generateFactorySchema(
                     fieldSchema as $ZodType,
                     newConfig,
@@ -470,8 +466,8 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         }
 
         if (schema instanceof z.ZodRecord) {
-            const valueSchema = schema.def.valueType;
-            const keySchema = schema.def.keyType as $ZodType | undefined;
+            const valueSchema = schema._zod.def.valueType;
+            const keySchema = schema._zod.def.keyType as $ZodType | undefined;
 
             const numKeys = this.number.int({ max: 3, min: 1 });
             const result: Record<string, unknown> = {};
@@ -490,30 +486,16 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         }
 
         if (schema instanceof z.ZodTransform || schema instanceof z.ZodPipe) {
+            if (schema instanceof z.ZodPipe && schema._zod.def.in) {
+                return this.generateFactorySchema(schema._zod.def.in, newConfig);
+            }
+            
             if (schema instanceof z.ZodTransform) {
-                return this.generateFactorySchema(schema, newConfig);
-            }
-
-            if (schema instanceof z.ZodPipe && schema.def.in) {
-                return this.generateFactorySchema(schema.def.in, newConfig);
-            }
-
-            if (
-                schema.def.effect &&
-                schema.def.type === 'refinement' &&
-                schema instanceof z.ZodAny
-            ) {
-                throw new TypeError(
-                    'ZodFactory cannot generate data for z.custom() schemas. ' +
-                        'Please provide a custom generator using the customGenerators option:\n\n' +
-                        'Example:\n' +
-                        'const schema = z.custom<MyType>(...).describe("my-custom-type");\n' +
-                        'const factory = new ZodFactory(schema, {\n' +
-                        '  customGenerators: {\n' +
-                        '    "my-custom-type": () => ({ ... })\n' +
-                        '  }\n' +
-                        '});',
-                );
+                // For transform, generate from the input schema if available
+                const innerSchema = (schema._zod.def as any).innerType || (schema._zod.def as any).schema;
+                if (innerSchema) {
+                    return this.generateFactorySchema(innerSchema, newConfig);
+                }
             }
         }
 
@@ -540,11 +522,11 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
      * @param kwargs Optional partial values to override
      * @returns Generated value that conforms to the Zod schema
      */
-    protected generate(_iteration: number, kwargs?: Partial<T>) {
+    protected generate(_iteration: number, kwargs?: Partial<z.output<T>>): z.output<T> {
         const generated = this.generateFactorySchema(
             this.schema,
             this.zodConfig,
-        ) as T;
+        );
 
         if (isObject(kwargs) && isObject(generated)) {
             return this.schema.parse({
@@ -553,11 +535,11 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             });
         }
 
-        return this.schema.parse(generated) as T;
+        return this.schema.parse(generated as Record<string, unknown>);
     }
 
     private generateNumberGenerator(schema: z.ZodNumber): number {
-        const checks = schema.def.checks as
+        const checks = schema._zod.def.checks as
             | { inclusive?: boolean; kind: string; value?: number }[]
             | undefined;
 
@@ -673,7 +655,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
     }
 
     private generateStringGenerator(schema: z.ZodString): string {
-        const checks = schema.def.checks as
+        const checks = schema._zod.def.checks as
             | { kind: string; regex?: RegExp; value?: unknown }[]
             | undefined;
 
@@ -837,14 +819,14 @@ export function initializeBuiltinZodTypes(): void {
     });
 
     zodTypeRegistry.register('ZodPromise', (schema, _factory, config) => {
-        const innerType = schema.def.type as $ZodType;
+        const innerType = (schema._zod.def as any).type as $ZodType;
         const innerFactory = new ZodFactory(innerType, config);
         const innerValue: unknown = innerFactory.build();
         return Promise.resolve(innerValue);
     });
 
     zodTypeRegistry.register('ZodLazy', (schema: $ZodType, factory, config) => {
-        const getter = schema._zod.def.getter as () => $ZodType;
+        const getter = (schema._zod.def as any).getter as () => $ZodType;
         const innerSchema = getter();
 
         return (factory as ZodFactory<$ZodType>).generateFactorySchema(

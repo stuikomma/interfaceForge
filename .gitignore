@@ -4,7 +4,6 @@
 .vscode
 _/
 coverage/
-dist/
 tsconfig.tsbuildinfo
 node_modules/
 
