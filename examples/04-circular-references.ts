@@ -39,14 +39,14 @@ interface User {
 }
 
 // Example 1: User and Posts with circular references
-const UserFactory = new Factory<User>((faker) => ({
+const UserFactory: Factory<User> = new Factory<User>((faker) => ({
     favoritePost: faker.use(() => PostFactory.build()),
     id: faker.string.uuid(),
     name: faker.person.fullName(),
     posts: faker.use(() => PostFactory.batch(3)),
 }));
 
-const PostFactory = new Factory<Post>((faker) => ({
+const PostFactory: Factory<Post> = new Factory<Post>((faker) => ({
     author: faker.use(() => UserFactory.build()),
     content: faker.lorem.paragraphs(2),
     id: faker.string.uuid(),
@@ -61,14 +61,16 @@ console.log('Posts by user:', user.posts.length);
 console.log('Favorite post:', user.favoritePost?.title);
 
 // Example 2: Organizational hierarchy with circular references
-const DepartmentFactory = new Factory<Department>((faker) => ({
-    employees: faker.use(() => EmployeeFactory.batch(5)),
-    id: faker.string.uuid(),
-    manager: faker.use(() => EmployeeFactory.build()),
-    name: faker.commerce.department(),
-}));
+const DepartmentFactory: Factory<Department> = new Factory<Department>(
+    (faker) => ({
+        employees: faker.use(() => EmployeeFactory.batch(5)),
+        id: faker.string.uuid(),
+        manager: faker.use(() => EmployeeFactory.build()),
+        name: faker.commerce.department(),
+    }),
+);
 
-const EmployeeFactory = new Factory<Employee>((faker) => ({
+const EmployeeFactory: Factory<Employee> = new Factory<Employee>((faker) => ({
     department: faker.use(() => DepartmentFactory.build()),
     id: faker.string.uuid(),
     name: faker.person.fullName(),
@@ -81,7 +83,7 @@ const EmployeeFactory = new Factory<Employee>((faker) => ({
 }));
 
 // Example 3: Controlling recursion depth
-const LimitedUserFactory = new Factory<User>(
+const LimitedUserFactory: Factory<User> = new Factory<User>(
     (faker) => ({
         favoritePost: undefined,
         id: faker.string.uuid(),
@@ -91,7 +93,7 @@ const LimitedUserFactory = new Factory<User>(
     { maxDepth: 3 }, // Limit nesting to 3 levels
 );
 
-const LimitedPostFactory = new Factory<Post>(
+const LimitedPostFactory: Factory<Post> = new Factory<Post>(
     (faker) => ({
         author: faker.use(() => LimitedUserFactory.build()),
         content: faker.lorem.paragraphs(2),
@@ -125,7 +127,7 @@ const userWithOwnPosts = createUserWithOwnPosts();
 console.log(
     'User owns all posts:',
     userWithOwnPosts.posts.every(
-        (post) => post.author.id === userWithOwnPosts.id,
+        (post: Post) => post.author.id === userWithOwnPosts.id,
     ),
 );
 
@@ -136,13 +138,15 @@ interface GraphNode {
     value: number;
 }
 
-const GraphNodeFactory = new Factory<GraphNode>((faker) => ({
-    connections: faker.use(() =>
-        GraphNodeFactory.batch(faker.number.int({ max: 3, min: 0 })),
-    ),
-    id: faker.string.uuid(),
-    value: faker.number.int({ max: 100, min: 1 }),
-}));
+const GraphNodeFactory: Factory<GraphNode> = new Factory<GraphNode>(
+    (faker) => ({
+        connections: faker.use(() =>
+            GraphNodeFactory.batch(faker.number.int({ max: 3, min: 0 })),
+        ),
+        id: faker.string.uuid(),
+        value: faker.number.int({ max: 100, min: 1 }),
+    }),
+);
 
 // Create a graph with limited depth to avoid infinite recursion
 const graphRoot = new Factory<GraphNode>(

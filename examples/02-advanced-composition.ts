@@ -79,23 +79,22 @@ console.log('Post by Jane:', authoredPost);
 // Example 3: Using compose() for factory composition
 const CompositeBlogFactory = BlogPostFactory.compose({
     author: AuthorFactory,
-    comments: () => CommentFactory.batch(3),
+    comments: CommentFactory.batch(3),
 });
 
 const composedPost = CompositeBlogFactory.build();
 console.log('Composed post:', composedPost);
 
-// Example 4: Advanced composition with iterate()
-const PostsWithIncreasingComments = BlogPostFactory.iterate(
-    (_faker, index) => ({
+// Example 4: Creating posts with increasing comments
+const progressivePosts = Array.from({ length: 5 }, (_, index) =>
+    BlogPostFactory.build({
         comments: CommentFactory.batch(index * 2),
         title: `Blog Post #${index + 1}`,
         viewCount: index * 1000,
     }),
 );
 
-const progressivePosts = PostsWithIncreasingComments.batch(5);
-progressivePosts.forEach((post, i) => {
+progressivePosts.forEach((post: BlogPost, i: number) => {
     console.log(
         `Post ${i + 1}: ${post.comments.length} comments, ${post.viewCount} views`,
     );

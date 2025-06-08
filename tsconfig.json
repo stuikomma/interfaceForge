@@ -21,6 +21,9 @@
         "incremental": true,
         "strictBindCallApply": true,
         "strictPropertyInitialization": true,
-        "types": ["vitest/globals", "vitest"]
+        "types": ["vitest/globals", "vitest"],
+        "paths": {
+            "interface-forge": ["./src/index.ts"]
+        }
     }
 }

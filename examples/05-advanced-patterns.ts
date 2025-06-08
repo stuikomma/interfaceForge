@@ -63,7 +63,7 @@ const ProductFactory = new Factory<Product>((faker) => ({
     category: faker.sample(categories),
     id: faker.string.uuid(),
     name: faker.commerce.productName(),
-    tags: faker.sample(allTags, faker.number.int({ max: 3, min: 1 })),
+    tags: faker.helpers.arrayElements(allTags, { max: 3, min: 1 }),
 }));
 
 // Products will have random categories and tag combinations
@@ -97,22 +97,24 @@ const EventFactory = new Factory<Event>((faker) => {
 });
 
 // Create a sequence of non-overlapping events
-const SequentialEventFactory = EventFactory.iterate((_faker, index) => {
-    const baseTime = new Date();
-    const startTime = new Date(baseTime.getTime() + index * 3_600_000); // 1 hour apart
-    const duration = 45; // 45 minutes each
+const createSequentialEvents = (count: number): Event[] => {
+    return Array.from({ length: count }, (_, index) => {
+        const baseTime = new Date();
+        const startTime = new Date(baseTime.getTime() + index * 3_600_000); // 1 hour apart
+        const duration = 45; // 45 minutes each
 
-    return {
-        duration,
-        endTime: new Date(startTime.getTime() + duration * 60_000),
-        startTime,
-    };
-});
+        return EventFactory.build({
+            duration,
+            endTime: new Date(startTime.getTime() + duration * 60_000),
+            startTime,
+        });
+    });
+};
 
-const schedule = SequentialEventFactory.batch(5);
+const schedule = createSequentialEvents(5);
 console.log(
     'Event schedule:',
-    schedule.map((e) => ({
+    schedule.map((e: Event) => ({
         name: e.name,
         start: e.startTime.toLocaleTimeString(),
     })),
@@ -155,30 +157,33 @@ const CustomerFactory = new Factory<Customer>((faker) => {
 
 // Generate realistic customer distribution
 const customers = CustomerFactory.batch(100);
-const tierCounts = customers.reduce<Record<string, number>>((acc, c) => {
-    acc[c.tier] = (acc[c.tier] || 0) + 1;
-    return acc;
-}, {});
+const tierCounts = customers.reduce<Record<string, number>>(
+    (acc: Record<string, number>, c: Customer) => {
+        acc[c.tier] = (acc[c.tier] || 0) + 1;
+        return acc;
+    },
+    {},
+);
 console.log('Customer tier distribution:', tierCounts);
 
 // Example 5: Deterministic data for testing
-const SeededFactory = new Factory<{ id: string; value: number }>(
-    (faker) => ({
+// Create factories with the same seed for reproducible data
+const createSeededFactory = () => {
+    const factory = new Factory<{ id: string; value: number }>((faker) => ({
         id: faker.string.uuid(),
         value: faker.number.int({ max: 100, min: 1 }),
-    }),
-    { randomizer: { seed: 12_345 } }, // Fixed seed for reproducible data
-);
+    }));
+    // Set the seed for reproducible results
+    factory.seed(12_345);
+    return factory;
+};
 
-// These will always generate the same values
-const deterministicData1 = SeededFactory.batch(3);
-const deterministicData2 = new Factory<{ id: string; value: number }>(
-    (faker) => ({
-        id: faker.string.uuid(),
-        value: faker.number.int({ max: 100, min: 1 }),
-    }),
-    { randomizer: { seed: 12_345 } },
-).batch(3);
+const SeededFactory1 = createSeededFactory();
+const SeededFactory2 = createSeededFactory();
+
+// These will generate the same values since they use the same seed
+const deterministicData1 = SeededFactory1.batch(3);
+const deterministicData2 = SeededFactory2.batch(3);
 
 console.log(
     'Deterministic data matches:',
