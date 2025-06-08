@@ -1,7 +1,7 @@
 /* eslint-disable unicorn/no-new-array */
 
 import { en, Faker, LocaleDefinition, Randomizer } from '@faker-js/faker';
-import { isIterator, isRecord } from '@tool-belt/type-predicates';
+import { isFunction, isIterator, isRecord } from '@tool-belt/type-predicates';
 import { CycleGenerator, SampleGenerator } from './generators';
 import { merge, Ref } from './utils';
 
@@ -23,6 +23,11 @@ export type FactorySchema<T> = {
         | T[K];
 };
 
+type AfterBuildHook<T> = (obj: T) => Promise<T> | T;
+
+type BeforeBuildHook<T> = (
+    params: Partial<T>,
+) => Partial<T> | Promise<Partial<T>>;
 /**
  * A factory class for generating type-safe mock data by extending Faker.js functionality.
  * Provides methods for creating single instances, batches, and complex object compositions
@@ -31,6 +36,8 @@ export type FactorySchema<T> = {
  * @template T - The type of objects this factory generates
  */
 export class Factory<T> extends Faker {
+    private afterBuildHooks: AfterBuildHook<T>[] = [];
+    private beforeBuildHooks: BeforeBuildHook<T>[] = [];
     private readonly factory: FactoryFunction<T>;
     private readonly maxDepth: number;
 
@@ -62,6 +69,21 @@ export class Factory<T> extends Faker {
 
         this.factory = factory;
         this.maxDepth = options?.maxDepth ?? 10;
+    }
+
+    /**
+     * Adds a hook that will be executed after building the instance.
+     *
+     * @param hook. Function that takes the result and returns the result.
+     * @param hook
+     * @returns The current Factory instance.
+     */
+    afterBuild(hook: (result: T) => Promise<T> | T): this {
+        if (typeof hook !== 'function') {
+            throw new TypeError('Hook must be a function');
+        }
+        this.afterBuildHooks.push(hook);
+        return this;
     }
 
     /**
@@ -115,6 +137,20 @@ export class Factory<T> extends Faker {
             .fill(null)
             .map((_, i) => this.#generate(i, undefined, 0));
     };
+    /**
+     * Adds a hook that will be executed before building the instance.
+     *
+     * @param hook. Function that takes partial parameters and returns partial parameters.
+     * @param hook
+     * @returns The current Factory instance.
+     */
+    beforeBuild(hook: BeforeBuildHook<T>): this {
+        if (!isFunction(hook)) {
+            throw new TypeError('Hook must be a function');
+        }
+        this.beforeBuildHooks.push(hook);
+        return this;
+    }
 
     /**
      * Generates a single instance of type T using the factory's schema.
@@ -141,6 +177,28 @@ export class Factory<T> extends Faker {
     build = (kwargs?: Partial<T>): T => {
         return this.#generate(0, kwargs, 0);
     };
+
+    /**
+     * Constructs an instance of T by applying hooks before and after construction.
+     *
+     * @param kwargs - Partial parameters for instance construction.
+     * @returns A promise that resolves to a T instance.
+     */
+    async buildWithHooks(kwargs?: Partial<T>): Promise<T> {
+        let params = kwargs ?? {};
+        let result: T;
+
+        for (const hook of this.beforeBuildHooks) {
+            params = await hook(params);
+        }
+
+        result = this.build(params);
+
+        for (const hook of this.afterBuildHooks) {
+            result = await hook(result);
+        }
+        return result;
+    }
 
     /**
      * Creates a new factory by merging this factory's schema with additional properties.
