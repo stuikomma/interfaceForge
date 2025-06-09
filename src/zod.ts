@@ -104,9 +104,9 @@ const zodTypeRegistry = new ZodTypeRegistry();
 export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
     z.output<T>
 > {
-    private readonly schema: T & {
+    private readonly schema: {
         parse: (data: Record<string, unknown>) => z.output<T>;
-    };
+    } & T;
     private readonly zodConfig: ZodFactoryConfig;
 
     constructor(schema: T, config?: ZodFactoryConfig) {
@@ -118,9 +118,9 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
 
         super(factoryFunction, factoryOptions);
 
-        this.schema = schema as T & {
+        this.schema = schema as {
             parse: (data: Record<string, unknown>) => z.output<T>;
-        };
+        } & T;
         this.zodConfig = config ?? {};
     }
 
@@ -131,7 +131,10 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
      * @param kwargs Optional partial values to override (single object or array)
      * @returns Array of generated values
      */
-    batch = (size: number, kwargs?: Partial<z.output<T>> | Partial<z.output<T>>[]) => {
+    batch = (
+        size: number,
+        kwargs?: Partial<z.output<T>> | Partial<z.output<T>>[],
+    ) => {
         if (!Number.isInteger(size) || size < 0) {
             throw new Error('Batch size must be a non-negative integer');
         }
@@ -188,6 +191,11 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         const currentDepth = config._currentDepth ?? 0;
         const maxDepth = config.maxDepth ?? 5;
 
+        // Explicit error for z.custom() schemas without customGenerators
+        if (schema instanceof z.ZodCustom) {
+            throw new Error('ZodFactory cannot generate data for z.custom() schemas');
+        }
+
         if (currentDepth >= maxDepth) {
             if (schema instanceof z.ZodOptional) {
                 return undefined;
@@ -196,14 +204,18 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
                 return [];
             }
             if (schema instanceof z.ZodString) {
-                const stringSchema = schema;
-                if (stringSchema._zod.def.checks) {
-                    for (const check of stringSchema._zod.def.checks) {
-                        if ((check as any).check === 'uuid') {
-                            return this.string.uuid();
-                        }
-                        if ((check as any).check === 'email') {
-                            return this.internet.email();
+                const def = (schema as any)._def || schema._zod?.def;
+                if (def?.checks) {
+                    for (const check of def.checks) {
+                        const checkDef = check.def || check;
+                        if (checkDef.check === 'string_format') {
+                            const {format} = checkDef;
+                            if (format === 'uuid') {
+                                return this.string.uuid();
+                            }
+                            if (format === 'email') {
+                                return this.internet.email();
+                            }
                         }
                     }
                 }
@@ -218,7 +230,8 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             }
 
             if (schema.constructor.name === 'ZodLazy') {
-                return { id: this.string.uuid() };
+                // Return minimal valid object that matches common recursive patterns
+                return {};
             }
         }
 
@@ -227,7 +240,13 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             _currentDepth: currentDepth + 1,
         };
 
-        const description = (schema._zod as any).description as string | undefined;
+        // In v4, descriptions are stored in meta
+        const meta =
+            typeof (schema as any).meta === 'function'
+                ? (schema as any).meta()
+                : undefined;
+        const description =
+            meta?.description || (schema._zod?.def as any)?.description;
 
         if (description && config.customGenerators?.[description]) {
             return config.customGenerators[description]();
@@ -241,6 +260,126 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
                 this as unknown as Factory<unknown>,
                 newConfig,
             );
+        }
+
+        // Handle specific string format types in v4
+        const def = (schema as any)._def || schema._zod?.def;
+        const schemaType = def?.type;
+        if (schemaType === 'string' && def?.checks?.length) {
+            // Check if this is a specific string format schema
+            const firstCheck = def.checks[0];
+            const checkDef = firstCheck?.def || firstCheck;
+            if (checkDef && checkDef.check === 'string_format') {
+                const {format} = checkDef;
+                // These specific formats have their own schema types in v4
+                switch (format) {
+                    case 'base64': {
+                        return Buffer.from(this.string.alpha(16)).toString(
+                            'base64',
+                        );
+                    }
+                    case 'base64url': {
+                        return Buffer.from(this.string.alpha(16)).toString(
+                            'base64url',
+                        );
+                    }
+                    case 'cidrv4': {
+                        return `${this.internet.ipv4()}/${this.number.int({ max: 32, min: 0 })}`;
+                    }
+                    case 'cidrv6': {
+                        return `${this.internet.ipv6()}/${this.number.int({ max: 128, min: 0 })}`;
+                    }
+                    case 'cuid': {
+                        return `c${this.string.alphanumeric(24).toLowerCase()}`;
+                    }
+                    case 'cuid2': {
+                        return this.string.alphanumeric(24).toLowerCase();
+                    }
+                    case 'date': {
+                        return new Date().toISOString().split('T')[0];
+                    }
+                    case 'datetime': {
+                        return new Date().toISOString();
+                    }
+                    case 'duration': {
+                        const hours = this.number.int({ max: 23, min: 0 });
+                        const minutes = this.number.int({ max: 59, min: 0 });
+                        const seconds = this.number.int({ max: 59, min: 0 });
+                        return `PT${hours}H${minutes}M${seconds}S`;
+                    }
+                    case 'e164': {
+                        return `+${this.string.numeric({ exclude: ['0'], length: 1 })}${this.string.numeric({ length: this.number.int({ max: 14, min: 10 }) })}`;
+                    }
+                    case 'email': {
+                        return this.internet.email();
+                    }
+                    case 'emoji': {
+                        const emojis = [
+                            '😀',
+                            '😎',
+                            '🚀',
+                            '🌟',
+                            '❤️',
+                            '🔥',
+                            '✨',
+                            '🎉',
+                        ];
+                        return this.helpers.arrayElement(emojis);
+                    }
+                    case 'guid': {
+                        return this.string.uuid();
+                    }
+                    case 'ipv4': {
+                        return this.internet.ipv4();
+                    }
+                    case 'ipv6': {
+                        return this.internet.ipv6();
+                    }
+                    case 'jwt': {
+                        const header = Buffer.from(
+                            '{"alg":"HS256","typ":"JWT"}',
+                        ).toString('base64url');
+                        const payload = Buffer.from(
+                            `{"sub":"${this.string.uuid()}","iat":${Math.floor(Date.now() / 1000)}}`,
+                        ).toString('base64url');
+                        const signature = this.string.alphanumeric(43);
+                        return `${header}.${payload}.${signature}`;
+                    }
+                    case 'ksuid': {
+                        return this.string.alphanumeric(27);
+                    }
+                    case 'nanoid': {
+                        return this.string.nanoid();
+                    }
+                    case 'time': {
+                        return new Date().toISOString().split('T')[1];
+                    }
+                    case 'ulid': {
+                        return this.string.alphanumeric(26).toUpperCase();
+                    }
+                    case 'url': {
+                        return this.internet.url();
+                    }
+                    case 'uuid': {
+                        return this.string.uuid();
+                    }
+                    case 'xid': {
+                        return this.string.alphanumeric(20).toLowerCase();
+                    }
+                }
+            }
+        }
+
+        // Check if it's a special string format type (ZodEmail, ZodUUID, etc.)
+        // In v4, these are separate types that don't inherit from ZodString
+        if (
+            typeof schema === 'object' &&
+            schema !== null &&
+            'format' in schema &&
+            schema.format &&
+            schema._zod?.traits?.has('$ZodString')
+        ) {
+            return this.generateStringFormat(schema.format as string);
         }
 
         if (schema instanceof z.ZodString) {
@@ -272,12 +411,41 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         }
 
         if (schema instanceof z.ZodLiteral) {
-            return schema._zod.def.values[0];
+            // In v4, literal value is stored in def.values array
+            const {values} = schema._zod.def;
+            if (Array.isArray(values) && values.length > 0) {
+                return values[0];
+            }
+            return (schema._zod.def as any).value || null;
         }
 
         if (schema instanceof z.ZodEnum) {
-            const entries = schema._zod.def.entries;
-            const values = Object.values(entries);
+            const {def} = schema._zod;
+            // In v4, entries could be an array or object
+            let values: unknown[];
+            if (Array.isArray(def.entries)) {
+                values = def.entries;
+            } else {
+                // def.entries contains the enum mapping
+                const entries = def.entries || {};
+                // For numeric enums, we need to get only the numeric values
+                // TypeScript numeric enums have bidirectional mapping
+                const allValues = Object.values(entries);
+                const numericValues = allValues.filter(
+                    (v) => typeof v === 'number',
+                );
+                const stringValues = allValues.filter(
+                    (v) => typeof v === 'string',
+                );
+
+                // If we have numeric values, use those (it's a numeric enum)
+                if (numericValues.length > 0) {
+                    values = numericValues;
+                } else {
+                    // Otherwise use all string values
+                    values = stringValues.length > 0 ? stringValues : allValues;
+                }
+            }
             return this.helpers.arrayElement(values);
         }
 
@@ -327,16 +495,22 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             return set;
         }
 
-        if ('brand' in schema._zod.def) {
+        if (schema._zod?.def && 'brand' in schema._zod.def) {
             return this.generateFactorySchema(schema, newConfig);
         }
 
         if (schema instanceof z.ZodDefault) {
-            return this.generateFactorySchema(schema._zod.def.innerType, newConfig);
+            return this.generateFactorySchema(
+                schema._zod.def.innerType,
+                newConfig,
+            );
         }
 
         if (schema instanceof z.ZodCatch) {
-            return this.generateFactorySchema(schema._zod.def.innerType, newConfig);
+            return this.generateFactorySchema(
+                schema._zod.def.innerType,
+                newConfig,
+            );
         }
 
         if (schema instanceof z.ZodUnion) {
@@ -347,8 +521,10 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         }
 
         if (schema instanceof z.ZodDiscriminatedUnion) {
-            const options = schema._zod.def.options;
-            const optionsArray = Array.isArray(options) ? options : Object.values(options);
+            const {options} = schema._zod.def;
+            const optionsArray = Array.isArray(options)
+                ? options
+                : Object.values(options);
             const randomOption = this.helpers.arrayElement(optionsArray);
             return this.generateFactorySchema(randomOption, newConfig);
         }
@@ -403,29 +579,44 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             let hasMaxConstraint = false;
 
             // Array length constraints are in checks in Zod v4
-
-            const checks = schema._zod.def.checks as
-                | { kind: string; value?: number }[]
+            const def = (schema as any)._def || schema._zod?.def;
+            const checks = def?.checks as
+                | {
+                      check?: string;
+                      def?: any;
+                      maximum?: number;
+                      minimum?: number;
+                      size?: number;
+                  }[]
                 | undefined;
             if (checks) {
                 for (const check of checks) {
-                    const checkKind = check.kind;
-                    const checkValue = check.value;
+                    const checkDef =
+                        (check as any)._zod?.def || check.def || check;
+                    const checkType = checkDef.check;
 
-                    if (checkKind === 'min' && typeof checkValue === 'number') {
-                        minLength = checkValue;
+                    if (
+                        (checkType === 'min_size' ||
+                            checkType === 'min_length') &&
+                        typeof checkDef.minimum === 'number'
+                    ) {
+                        minLength = checkDef.minimum;
                         hasMinConstraint = true;
                     } else if (
-                        checkKind === 'max' &&
-                        typeof checkValue === 'number'
+                        (checkType === 'max_size' ||
+                            checkType === 'max_length') &&
+                        typeof checkDef.maximum === 'number'
                     ) {
-                        maxLength = checkValue;
+                        maxLength = checkDef.maximum;
                         hasMaxConstraint = true;
                     } else if (
-                        checkKind === 'length' &&
-                        typeof checkValue === 'number'
+                        (checkType === 'size_equals' ||
+                            checkType === 'length_equals') &&
+                        (typeof checkDef.size === 'number' ||
+                            typeof checkDef.length === 'number')
                     ) {
-                        minLength = maxLength = checkValue;
+                        minLength = maxLength =
+                            checkDef.size || checkDef.length;
                         hasMinConstraint = hasMaxConstraint = true;
                     }
                 }
@@ -448,14 +639,16 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             });
 
             return Array.from({ length }, () =>
-                this.generateFactorySchema(itemSchema as $ZodType, newConfig),
+                this.generateFactorySchema(itemSchema, newConfig),
             );
         }
 
         if (schema instanceof z.ZodObject) {
             const result: Record<string, unknown> = {};
 
-            for (const [key, fieldSchema] of Object.entries(schema._zod.def.shape)) {
+            for (const [key, fieldSchema] of Object.entries(
+                schema._zod.def.shape,
+            )) {
                 result[key] = this.generateFactorySchema(
                     fieldSchema as $ZodType,
                     newConfig,
@@ -487,12 +680,17 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
 
         if (schema instanceof z.ZodTransform || schema instanceof z.ZodPipe) {
             if (schema instanceof z.ZodPipe && schema._zod.def.in) {
-                return this.generateFactorySchema(schema._zod.def.in, newConfig);
+                return this.generateFactorySchema(
+                    schema._zod.def.in,
+                    newConfig,
+                );
             }
-            
+
             if (schema instanceof z.ZodTransform) {
                 // For transform, generate from the input schema if available
-                const innerSchema = (schema._zod.def as any).innerType || (schema._zod.def as any).schema;
+                const innerSchema =
+                    (schema._zod.def as any).innerType ||
+                    (schema._zod.def as any).schema;
                 if (innerSchema) {
                     return this.generateFactorySchema(innerSchema, newConfig);
                 }
@@ -522,7 +720,10 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
      * @param kwargs Optional partial values to override
      * @returns Generated value that conforms to the Zod schema
      */
-    protected generate(_iteration: number, kwargs?: Partial<z.output<T>>): z.output<T> {
+    protected generate(
+        _iteration: number,
+        kwargs?: Partial<z.output<T>>,
+    ): z.output<T> {
         const generated = this.generateFactorySchema(
             this.schema,
             this.zodConfig,
@@ -535,71 +736,102 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             });
         }
 
-        return this.schema.parse(generated as Record<string, unknown>);
+        // For non-object schemas (like strings, numbers), parse the value directly
+        // Some schemas (like function, promise) might not have a parse method
+        if ('parse' in this.schema && typeof this.schema.parse === 'function') {
+            return this.schema.parse(generated as any);
+        }
+
+        return generated as z.output<T>;
     }
 
     private generateNumberGenerator(schema: z.ZodNumber): number {
-        const checks = schema._zod.def.checks as
-            | { inclusive?: boolean; kind: string; value?: number }[]
+        // In v4, ZodNumber instances have direct properties
+        let isInt = (schema as any).isInt || false;
+        let numberFormat = (schema as any).format;
+
+        const def = (schema as any)._def || schema._zod?.def;
+        const checks = def?.checks as
+            | {
+                  [key: string]: unknown;
+                  check?: string;
+                  def?: any;
+                  format?: string;
+                  inclusive?: boolean;
+                  value?: number;
+              }[]
             | undefined;
 
-        let min: number | undefined;
-        let max: number | undefined;
-        let isInt = false;
+        let min: number | undefined = (schema as any).minValue;
+        let max: number | undefined = (schema as any).maxValue;
         let isPositive = false;
         let isNegative = false;
         let isNonNegative = false;
         let isNonPositive = false;
-        let isFinite = false;
+        const isFinite = (schema as any).isFinite || false;
         let isSafe = false;
         let step: number | undefined;
 
         if (checks) {
             for (const check of checks) {
-                const checkKind = check.kind;
-                const checkValue = check.value;
+                // In v4, the check info might be in check._zod.def
+                const checkDef = (check as any)._zod?.def || check.def || check;
+                const checkType = checkDef.check;
 
-                switch (checkKind) {
-                    case 'finite': {
-                        isFinite = true;
+                switch (checkType) {
+                    case 'greater_than': {
+                        const {value} = checkDef;
+                        const {inclusive} = checkDef;
+                        if (inclusive) {
+                            min = value;
+                        } else {
+                            min = value + 0.000_001; // Small increment for exclusive
+                        }
                         break;
                     }
-                    case 'int': {
-                        isInt = true;
+                    case 'less_than': {
+                        const {value} = checkDef;
+                        const {inclusive} = checkDef;
+                        if (inclusive) {
+                            max = value;
+                        } else {
+                            max = value - 0.000_001; // Small decrement for exclusive
+                        }
                         break;
                     }
-                    case 'max': {
-                        max = checkValue;
+                    case 'multiple_of': {
+                        step = checkDef.value;
                         break;
                     }
-                    case 'min': {
-                        min = checkValue;
-                        break;
-                    }
-                    case 'multipleOf': {
-                        step = checkValue;
-                        break;
-                    }
-                    case 'safe': {
-                        isSafe = true;
+                    case 'number_format': {
+                        numberFormat = checkDef.format;
+                        if (
+                            numberFormat === 'int32' ||
+                            numberFormat === 'uint32' ||
+                            numberFormat === 'safeint'
+                        ) {
+                            isInt = true;
+                        }
+                        if (numberFormat === 'safeint') {
+                            isSafe = true;
+                        }
+                        if (numberFormat === 'uint32') {
+                            min = 0;
+                            max = 4_294_967_295;
+                        } else if (numberFormat === 'int32') {
+                            min = -2_147_483_648;
+                            max = 2_147_483_647;
+                        }
                         break;
                     }
                 }
             }
 
-            const checkKinds = new Set(checks.map((c) => c.kind));
-            isPositive =
-                checkKinds.has('min') &&
-                checks.some((c) => c.kind === 'min' && (c.value ?? 0) > 0);
-            isNegative =
-                checkKinds.has('max') &&
-                checks.some((c) => c.kind === 'max' && (c.value ?? 0) < 0);
-            isNonNegative =
-                checkKinds.has('min') &&
-                checks.some((c) => c.kind === 'min' && (c.value ?? 0) >= 0);
-            isNonPositive =
-                checkKinds.has('max') &&
-                checks.some((c) => c.kind === 'max' && (c.value ?? 0) <= 0);
+            // Check for positive/negative constraints based on min/max values
+            if (min !== undefined && min > 0) {isPositive = true;}
+            if (max !== undefined && max < 0) {isNegative = true;}
+            if (min !== undefined && min >= 0) {isNonNegative = true;}
+            if (max !== undefined && max <= 0) {isNonPositive = true;}
         }
 
         if (isPositive && (!min || min <= 0)) {
@@ -638,6 +870,13 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             max = Math.min(max ?? Number.MAX_VALUE, Number.MAX_VALUE);
         }
 
+        // Ensure we have finite bounds
+        if (!isFinite) {
+            // If not explicitly finite, use reasonable defaults
+            min = min ?? (isInt ? -1000 : -1000);
+            max = max ?? (isInt ? 1000 : 1000);
+        }
+
         const options = {
             max: max ?? (isInt ? 100 : 100.9),
             min: min ?? 0,
@@ -651,104 +890,440 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
             result = Math.round(result / step) * step;
         }
 
+        // Ensure integers are actually integers (no decimals)
+        if (isInt) {
+            result = Math.floor(result);
+        }
+
+        // Final safety check - ensure result is finite
+        if (!Number.isFinite(result)) {
+            result = isInt ? 0 : 0;
+        }
+
         return result;
     }
 
+    private generateStringFormat(format: string): string {
+        switch (format) {
+            case 'base64': {
+                const str = this.string.alphanumeric(16);
+                return Buffer.from(str).toString('base64');
+            }
+            case 'base64url': {
+                const str2 = this.string.alphanumeric(16);
+                return Buffer.from(str2).toString('base64url');
+            }
+            case 'cidrv4': {
+                return `${this.internet.ipv4()}/${this.number.int({ max: 32, min: 0 })}`;
+            }
+            case 'cidrv6': {
+                return `${this.internet.ipv6()}/${this.number.int({ max: 128, min: 0 })}`;
+            }
+            case 'cuid': {
+                return `c${this.string.alphanumeric(24).toLowerCase()}`;
+            }
+            case 'cuid2': {
+                return this.string.alphanumeric(24).toLowerCase();
+            }
+            case 'date':
+            case 'iso_date': {
+                return new Date().toISOString().split('T')[0];
+            }
+            case 'datetime':
+            case 'iso_datetime': {
+                return new Date().toISOString();
+            }
+            case 'duration':
+            case 'iso_duration': {
+                // Generate ISO 8601 duration like P1Y2M3DT4H5M6S
+                const years = this.number.int({ max: 10, min: 0 });
+                const months = this.number.int({ max: 11, min: 0 });
+                const days = this.number.int({ max: 30, min: 0 });
+                const hours = this.number.int({ max: 23, min: 0 });
+                const minutes = this.number.int({ max: 59, min: 0 });
+                const seconds = this.number.int({ max: 59, min: 0 });
+
+                let duration = 'P';
+                if (years) {duration += `${years}Y`;}
+                if (months) {duration += `${months}M`;}
+                if (days) {duration += `${days}D`;}
+                if (hours || minutes || seconds) {
+                    duration += 'T';
+                    if (hours) {duration += `${hours}H`;}
+                    if (minutes) {duration += `${minutes}M`;}
+                    if (seconds) {duration += `${seconds}S`;}
+                }
+                return duration === 'P' ? 'PT0S' : duration;
+            }
+            case 'e164': {
+                // E.164 phone number format
+                return `+${this.number.int({ max: 999, min: 1 })}${this.string.numeric({ length: 10 })}`;
+            }
+            case 'email': {
+                return this.internet.email();
+            }
+            case 'emoji': {
+                const emojis = [
+                    '😀',
+                    '😃',
+                    '😄',
+                    '😁',
+                    '😊',
+                    '🎉',
+                    '🎈',
+                    '🌟',
+                    '🚀',
+                    '💡',
+                ];
+                return this.helpers.arrayElement(emojis);
+            }
+            case 'guid':
+            case 'uuid': {
+                return this.string.uuid();
+            }
+            case 'ipv4': {
+                return this.internet.ipv4();
+            }
+            case 'ipv6': {
+                return this.internet.ipv6();
+            }
+            case 'iso_time':
+            case 'time': {
+                return new Date().toISOString().split('T')[1];
+            }
+            case 'jwt': {
+                // Generate a simple JWT-like string
+                const header = Buffer.from(
+                    '{"alg":"HS256","typ":"JWT"}',
+                ).toString('base64url');
+                const payload = Buffer.from(
+                    `{"sub":"${this.string.uuid()}","iat":${Math.floor(Date.now() / 1000)}}`,
+                ).toString('base64url');
+                const signature = this.string.alphanumeric(43); // Typical signature length
+                return `${header}.${payload}.${signature}`;
+            }
+            case 'ksuid': {
+                // KSUID is a 27-character base62 encoded string
+                return this.string.alphanumeric(27);
+            }
+            case 'nanoid': {
+                // NanoID is typically 21 characters
+                return this.string.nanoid();
+            }
+            case 'ulid': {
+                return this.string.alphanumeric(26).toUpperCase();
+            }
+            case 'url': {
+                return this.internet.url();
+            }
+            case 'xid': {
+                // XID is a 20-character base32 encoded string
+                return this.string.alphanumeric(20).toLowerCase();
+            }
+            default: {
+                // Fallback to basic string generation
+                return this.lorem.word();
+            }
+        }
+    }
+
     private generateStringGenerator(schema: z.ZodString): string {
-        const checks = schema._zod.def.checks as
-            | { kind: string; regex?: RegExp; value?: unknown }[]
+        const def = (schema as any)._def || schema._zod?.def;
+        const checks = def?.checks as
+            | {
+                  [key: string]: unknown;
+                  check?: string;
+                  def?: any;
+                  format?: string;
+                  pattern?: RegExp;
+                  value?: unknown;
+              }[]
             | undefined;
 
         let minLength: number | undefined;
         let maxLength: number | undefined;
         let exactLength: number | undefined;
-        const patterns: { kind: string; regex?: RegExp; value?: unknown }[] =
-            [];
+        const patterns: any[] = [];
 
         if (checks) {
             for (const check of checks) {
-                switch (check.kind) {
-                    case 'length': {
-                        exactLength = check.value as number;
+                // In v4, checks might have a format property at top level (e.g., ZodEmail)
+                if ((check as any).format) {
+                    patterns.push(check);
+                    continue;
+                }
+
+                // In v4, the check info might be nested in check.def
+                // In v4, checks have _zod.def structure
+                const checkDef = (check as any)._zod?.def || check.def || check;
+                const checkType = checkDef.check;
+                switch (checkType) {
+                    case 'length_equals': {
+                        exactLength = checkDef.length as number;
                         break;
                     }
-                    case 'max': {
-                        maxLength = check.value as number;
+                    case 'max_length': {
+                        maxLength = checkDef.maximum as number;
                         break;
                     }
-                    case 'min': {
-                        minLength = check.value as number;
+                    case 'min_length': {
+                        minLength = checkDef.minimum as number;
                         break;
                     }
                     default: {
-                        patterns.push(check);
+                        patterns.push(checkDef);
                     }
                 }
             }
         }
 
         for (const pattern of patterns) {
-            switch (pattern.kind) {
-                case 'cuid': {
-                    return `c${this.string.alphanumeric(24).toLowerCase()}`;
-                }
-                case 'cuid2': {
-                    return this.string.alphanumeric(24).toLowerCase();
-                }
-                case 'datetime': {
-                    return new Date().toISOString();
-                }
-                case 'email': {
-                    return this.internet.email();
-                }
-                case 'ip': {
-                    return this.internet.ip();
-                }
-                case 'regex': {
-                    const regex = pattern.regex!;
-
-                    if (regex.source.includes('@')) {
+            // Check if pattern has format at top level (e.g., ZodEmail instance)
+            if (pattern.format) {
+                const {format} = pattern;
+                switch (format) {
+                    case 'cuid': {
+                        return `c${this.string.alphanumeric(24).toLowerCase()}`;
+                    }
+                    case 'cuid2': {
+                        return this.string.alphanumeric(24).toLowerCase();
+                    }
+                    case 'email': {
                         return this.internet.email();
                     }
-                    if (regex.source === '^[a-zA-Z0-9_]+$') {
-                        const len =
-                            exactLength ??
-                            (minLength && maxLength
-                                ? this.number.int({
-                                      max: maxLength,
-                                      min: minLength,
-                                  })
-                                : 10);
-                        return this.string.alphanumeric(len);
+                    case 'nanoid': {
+                        return this.string.nanoid();
                     }
-
-                    if (regex.source === '^[A-Z]{3}-\\d{3}$') {
-                        const letters = this.string.alpha({
-                            casing: 'upper',
-                            length: 3,
-                        });
-                        const numbers = this.string.numeric({ length: 3 });
-                        return `${letters}-${numbers}`;
+                    case 'ulid': {
+                        return this.string.alphanumeric(26).toUpperCase();
                     }
+                    case 'url': {
+                        return this.internet.url();
+                    }
+                    case 'uuid': {
+                        return this.string.uuid();
+                    }
+                }
+                continue;
+            }
 
-                    const len =
-                        exactLength ??
-                        (minLength && maxLength
-                            ? this.number.int({
-                                  max: maxLength,
-                                  min: minLength,
-                              })
-                            : (minLength ?? 10));
-                    return this.string.alphanumeric(len);
-                }
-                case 'ulid': {
-                    return this.string.alphanumeric(26).toUpperCase();
-                }
-                case 'url': {
-                    return this.internet.url();
-                }
-                case 'uuid': {
-                    return this.string.uuid();
+            const checkType = pattern.check;
+            switch (checkType) {
+                case 'string_format': {
+                    const {format} = pattern;
+                    switch (format) {
+                        case 'base64': {
+                            return Buffer.from(this.string.alpha(16)).toString(
+                                'base64',
+                            );
+                        }
+                        case 'base64url': {
+                            return Buffer.from(this.string.alpha(16)).toString(
+                                'base64url',
+                            );
+                        }
+                        case 'cidrv4': {
+                            return `${this.internet.ipv4()}/${this.number.int({ max: 32, min: 0 })}`;
+                        }
+                        case 'cidrv6': {
+                            return `${this.internet.ipv6()}/${this.number.int({ max: 128, min: 0 })}`;
+                        }
+                        case 'cuid': {
+                            return `c${this.string.alphanumeric(24).toLowerCase()}`;
+                        }
+                        case 'cuid2': {
+                            return this.string.alphanumeric(24).toLowerCase();
+                        }
+                        case 'date': {
+                            return new Date().toISOString().split('T')[0];
+                        }
+                        case 'datetime': {
+                            return new Date().toISOString();
+                        }
+                        case 'duration': {
+                            // ISO 8601 duration format
+                            const hours = this.number.int({ max: 23, min: 0 });
+                            const minutes = this.number.int({
+                                max: 59,
+                                min: 0,
+                            });
+                            const seconds = this.number.int({
+                                max: 59,
+                                min: 0,
+                            });
+                            return `PT${hours}H${minutes}M${seconds}S`;
+                        }
+                        case 'e164': {
+                            // E.164 phone number format
+                            return `+${this.string.numeric({ exclude: ['0'], length: 1 })}${this.string.numeric({ length: this.number.int({ max: 14, min: 10 }) })}`;
+                        }
+                        case 'email': {
+                            return this.internet.email();
+                        }
+                        case 'emoji': {
+                            // Simple emoji generation
+                            const emojis = [
+                                '😀',
+                                '😎',
+                                '🚀',
+                                '🌟',
+                                '❤️',
+                                '🔥',
+                                '✨',
+                                '🎉',
+                            ];
+                            return this.helpers.arrayElement(emojis);
+                        }
+                        case 'ends_with': {
+                            const suffix = (pattern).suffix || '';
+                            const remainingLength = exactLength
+                                ? exactLength - suffix.length
+                                : maxLength
+                                  ? Math.max(0, maxLength - suffix.length)
+                                  : 5;
+                            return this.string.alpha(remainingLength) + suffix;
+                        }
+                        case 'guid': {
+                            return this.string.uuid();
+                        }
+                        case 'includes': {
+                            const includes = (pattern).includes || '';
+                            const {position} = (pattern);
+                            if (typeof position === 'number') {
+                                const before = this.string.alpha(position);
+                                const after = this.string.alpha(5);
+                                return before + includes + after;
+                            }
+                            return (
+                                this.string.alpha(3) +
+                                includes +
+                                this.string.alpha(3)
+                            );
+                        }
+                        case 'ipv4': {
+                            return this.internet.ipv4();
+                        }
+                        case 'ipv6': {
+                            return this.internet.ipv6();
+                        }
+                        case 'json_string': {
+                            return JSON.stringify({
+                                [this.lorem.word()]: this.lorem.word(),
+                            });
+                        }
+                        case 'jwt': {
+                            // Simple JWT mock
+                            const header = Buffer.from(
+                                '{"alg":"HS256","typ":"JWT"}',
+                            ).toString('base64url');
+                            const payload = Buffer.from(
+                                `{"sub":"${this.string.uuid()}","iat":${Math.floor(Date.now() / 1000)}}`,
+                            ).toString('base64url');
+                            const signature = this.string.alphanumeric(43);
+                            return `${header}.${payload}.${signature}`;
+                        }
+                        case 'ksuid': {
+                            // KSUID is a 27 character base62 encoded string
+                            return this.string.alphanumeric(27);
+                        }
+                        case 'lowercase': {
+                            const len =
+                                exactLength ??
+                                (minLength && maxLength
+                                    ? this.number.int({
+                                          max: maxLength,
+                                          min: minLength,
+                                      })
+                                    : 10);
+                            return this.string.alpha({
+                                casing: 'lower',
+                                length: len,
+                            });
+                        }
+                        case 'nanoid': {
+                            return this.string.nanoid();
+                        }
+                        case 'regex': {
+                            const regex = pattern.pattern || pattern.regex;
+                            if (!regex) {break;}
+
+                            if (regex.source.includes('@')) {
+                                return this.internet.email();
+                            }
+                            if (regex.source === '^[a-zA-Z0-9_]+$') {
+                                const len =
+                                    exactLength ??
+                                    (minLength && maxLength
+                                        ? this.number.int({
+                                              max: maxLength,
+                                              min: minLength,
+                                          })
+                                        : 10);
+                                return this.string.alphanumeric(len);
+                            }
+
+                            if (regex.source === '^[A-Z]{3}-\\d{3}$'.replace('\\\\', '\\')) {
+                                const letters = this.string.alpha({
+                                    casing: 'upper',
+                                    length: 3,
+                                });
+                                const numbers = this.string.numeric({
+                                    length: 3,
+                                });
+                                return `${letters}-${numbers}`;
+                            }
+
+                            const len =
+                                exactLength ??
+                                (minLength && maxLength
+                                    ? this.number.int({
+                                          max: maxLength,
+                                          min: minLength,
+                                      })
+                                    : (minLength ?? 10));
+                            return this.string.alphanumeric(len);
+                        }
+                        case 'starts_with': {
+                            const prefix = (pattern).prefix || '';
+                            const remainingLength = exactLength
+                                ? exactLength - prefix.length
+                                : minLength
+                                  ? Math.max(0, minLength - prefix.length)
+                                  : 5;
+                            return prefix + this.string.alpha(remainingLength);
+                        }
+                        case 'time': {
+                            return new Date().toISOString().split('T')[1];
+                        }
+                        case 'ulid': {
+                            return this.string.alphanumeric(26).toUpperCase();
+                        }
+                        case 'uppercase': {
+                            const len =
+                                exactLength ??
+                                (minLength && maxLength
+                                    ? this.number.int({
+                                          max: maxLength,
+                                          min: minLength,
+                                      })
+                                    : 10);
+                            return this.string.alpha({
+                                casing: 'upper',
+                                length: len,
+                            });
+                        }
+                        case 'url': {
+                            return this.internet.url();
+                        }
+                        case 'uuid': {
+                            return this.string.uuid();
+                        }
+                        case 'xid': {
+                            // XID is a 20 character base32 encoded string
+                            return this.string.alphanumeric(20).toLowerCase();
+                        }
+                    }
+                    break;
                 }
             }
         }
@@ -819,20 +1394,28 @@ export function initializeBuiltinZodTypes(): void {
     });
 
     zodTypeRegistry.register('ZodPromise', (schema, _factory, config) => {
-        const innerType = (schema._zod.def as any).type as $ZodType;
-        const innerFactory = new ZodFactory(innerType, config);
-        const innerValue: unknown = innerFactory.build();
-        return Promise.resolve(innerValue);
+        const innerType = ((schema as any)._def || schema._zod?.def)
+            ?.type as $ZodType;
+        if (innerType) {
+            const innerFactory = new ZodFactory(innerType, config);
+            const innerValue: unknown = innerFactory.build();
+            return Promise.resolve(innerValue);
+        }
+        return Promise.resolve(_factory.lorem.word());
     });
 
     zodTypeRegistry.register('ZodLazy', (schema: $ZodType, factory, config) => {
-        const getter = (schema._zod.def as any).getter as () => $ZodType;
-        const innerSchema = getter();
-
-        return (factory as ZodFactory<$ZodType>).generateFactorySchema(
-            innerSchema,
-            config,
-        );
+        const def = (schema as any)._def || schema._zod?.def;
+        const getter = def?.getter as (() => $ZodType) | undefined;
+        if (getter) {
+            const innerSchema = getter();
+            return (factory as ZodFactory<$ZodType>).generateFactorySchema(
+                innerSchema,
+                config,
+            );
+        }
+        // Fallback for lazy schemas
+        return { id: factory.string.uuid() };
     });
 }
 
