@@ -9,10 +9,13 @@ import { PersistenceAdapter } from '../persistence-adapter';
 export class TypeORMAdapter<T extends object> implements PersistenceAdapter<T> {
     /**
      * @param repository The TypeORM Repository (e.g., `AppDataSource.getRepository(User)`).
-     * Using `any` here for flexibility, but you could define
-     * a more specific TypeORM `Repository<T>` type if needed.
+     * Using `unknown` here as TypeORM Repository types can be complex and
+     * depend on your entity definition. For stricter typing, you
+     * might define a `TypeORMRepository<T>` interface.
      */
-    constructor(private readonly repository: any) {} // eslint-disable-line @typescript-eslint/no-explicit-any
+    constructor(private readonly repository: unknown) {
+        this.repository = repository;
+    }
 
     /**
      * Persists a single TypeORM entity.
@@ -21,8 +24,15 @@ export class TypeORMAdapter<T extends object> implements PersistenceAdapter<T> {
      * @returns A Promise that resolves with the saved TypeORM entity.
      */
     async create(data: T): Promise<T> {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        return await this.repository.save(data);
+        if (
+            this.repository &&
+            typeof this.repository === 'object' &&
+            'save' in this.repository
+        ) {
+            const saveMethod = this.repository.save as (data: T) => Promise<T>;
+            return await saveMethod(data);
+        }
+        throw new Error('Invalid repository: save method not available');
     }
 
     /**
@@ -32,7 +42,16 @@ export class TypeORMAdapter<T extends object> implements PersistenceAdapter<T> {
      * @returns A Promise that resolves with an array of the saved TypeORM entities.
      */
     async createMany(data: T[]): Promise<T[]> {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        return await this.repository.save(data);
+        if (
+            this.repository &&
+            typeof this.repository === 'object' &&
+            'save' in this.repository
+        ) {
+            const saveMethod = this.repository.save as (
+                data: T[],
+            ) => Promise<T[]>;
+            return await saveMethod(data);
+        }
+        throw new Error('Invalid repository: save method not available');
     }
 }

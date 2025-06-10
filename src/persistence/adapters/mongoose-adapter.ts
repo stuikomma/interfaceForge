@@ -9,11 +9,13 @@ import { PersistenceAdapter } from '../persistence-adapter';
 export class MongooseAdapter<T> implements PersistenceAdapter<T> {
     /**
      * @param model The Mongoose Model (e.g., `UserModel`).
-     * Using `any` here as Mongoose Model types can be complex and
+     * Using `unknown` here as Mongoose Model types can be complex and
      * depend on your schema definition. For stricter typing, you
      * might define a `MongooseModel<T>` interface.
      */
-    constructor(private readonly model: any) {} // eslint-disable-line @typescript-eslint/no-explicit-any
+    constructor(private readonly model: unknown) {
+        this.model = model;
+    }
 
     /**
      * Persists a single Mongoose document.
@@ -22,8 +24,15 @@ export class MongooseAdapter<T> implements PersistenceAdapter<T> {
      * @returns A Promise that resolves with the saved Mongoose document.
      */
     async create(data: T): Promise<T> {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        return await this.model.create(data);
+        if (
+            this.model &&
+            typeof this.model === 'object' &&
+            'create' in this.model
+        ) {
+            const createMethod = this.model.create as (data: T) => Promise<T>;
+            return await createMethod(data);
+        }
+        throw new Error('Invalid model: create method not available');
     }
 
     /**
@@ -33,7 +42,16 @@ export class MongooseAdapter<T> implements PersistenceAdapter<T> {
      * @returns A Promise that resolves with an array of the saved Mongoose documents.
      */
     async createMany(data: T[]): Promise<T[]> {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        return await this.model.insertMany(data);
+        if (
+            this.model &&
+            typeof this.model === 'object' &&
+            'insertMany' in this.model
+        ) {
+            const insertManyMethod = this.model.insertMany as (
+                data: T[],
+            ) => Promise<T[]>;
+            return await insertManyMethod(data);
+        }
+        throw new Error('Invalid model: insertMany method not available');
     }
 }

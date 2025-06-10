@@ -9,11 +9,13 @@ import { PersistenceAdapter } from '../persistence-adapter';
 export class PrismaAdapter<T> implements PersistenceAdapter<T> {
     /**
      * @param model The Prisma client model (e.g., `prisma.user`).
-     * Using `any` here as Prisma model types are generated dynamically
+     * Using `unknown` here as Prisma model types are generated dynamically
      * and can be complex. For stricter typing, you might define
      * a generic `PrismaModel<T>` type based on Prisma's generated types.
      */
-    constructor(private readonly model: any) {} // eslint-disable-line @typescript-eslint/no-explicit-any
+    constructor(private readonly model: unknown) {
+        this.model = model;
+    }
 
     /**
      * Persists a single Prisma record.
@@ -22,8 +24,17 @@ export class PrismaAdapter<T> implements PersistenceAdapter<T> {
      * @returns A Promise that resolves with the created Prisma record.
      */
     async create(data: T): Promise<T> {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        return await this.model.create({ data });
+        if (
+            this.model &&
+            typeof this.model === 'object' &&
+            'create' in this.model
+        ) {
+            const createMethod = this.model.create as (args: {
+                data: T;
+            }) => Promise<T>;
+            return await createMethod({ data });
+        }
+        throw new Error('Invalid model: create method not available');
     }
 
     /**
@@ -38,8 +49,17 @@ export class PrismaAdapter<T> implements PersistenceAdapter<T> {
      * or the input data if returning actual records is needed (and not supported by `createMany`).
      */
     async createMany(data: T[]): Promise<T[]> {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        await this.model.createMany({ data });
-        return data;
+        if (
+            this.model &&
+            typeof this.model === 'object' &&
+            'createMany' in this.model
+        ) {
+            const createManyMethod = this.model.createMany as (args: {
+                data: T[];
+            }) => Promise<{ count: number }>;
+            await createManyMethod({ data });
+            return data;
+        }
+        throw new Error('Invalid model: createMany method not available');
     }
 }
