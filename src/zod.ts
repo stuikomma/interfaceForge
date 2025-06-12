@@ -255,7 +255,7 @@ export class ZodFactory<T extends z.ZodObject> extends Factory<
 
         // In v4, descriptions are stored in meta
         const meta =
-            typeof (schema as any).meta === 'function'
+            typeof schema.meta === 'function'
                 ? (schema as any).meta()
                 : undefined;
         const description =
@@ -424,7 +424,7 @@ export class ZodFactory<T extends z.ZodObject> extends Factory<
         }
 
         if (schema instanceof z.ZodLiteral) {
-            // In v4, literal value is stored in def.values array
+            // In v4, literal value is stored in def.values array ~keep
             const {values} = schema._zod.def;
             if (Array.isArray(values) && values.length > 0) {
                 return values[0];

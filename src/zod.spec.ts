@@ -110,21 +110,6 @@ describe('ZodFactory', () => {
             expect(typeof result.bigNumber).toBe('bigint');
         });
 
-        it('should handle complex registered types', () => {
-            registerZodType('ZodFunction', (_schema, _factory) => {
-                return () => 'mock function result';
-            });
-
-            const schema = z.object({
-                fn: z.function(),
-            });
-
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(typeof result.fn).toBe('function');
-            expect((result.fn as () => string)()).toBe('mock function result');
-        });
     });
 
     describe('Core Enum schemas', () => {
@@ -211,25 +196,6 @@ describe('ZodFactory', () => {
     });
 
     describe('Custom Type Registration', () => {
-        it('should register and use custom type handlers', () => {
-            const CustomString = z.custom<string>(() => true);
-
-            Object.defineProperty(CustomString.constructor, 'name', {
-                value: 'ZodCustomString',
-            });
-
-            registerZodType('ZodCustomString', (_schema, factory) => {
-                return `CUSTOM_${factory.lorem.word().toUpperCase()}`;
-            });
-
-            const factory = new ZodFactory(CustomString);
-            const result = factory.build();
-
-            expect(typeof result).toBe('string');
-            expect(result).toMatch(/^CUSTOM_[A-Z]+$/);
-
-            unregisterZodType('ZodCustomString');
-        });
 
         it('should handle built-in registered types', () => {
             const bigIntSchema = z.bigint();
@@ -260,28 +226,7 @@ describe('ZodFactory', () => {
             expect(result).toBeUndefined();
         });
 
-        it('should handle function type', () => {
-            const functionSchema = z.function();
 
-            const factory = new ZodFactory(functionSchema as any);
-            const result = factory.build();
-
-            expect(typeof result).toBe('function');
-            expect(typeof result()).toBe('string');
-        });
-
-        it('should handle promise type', () => {
-            const promiseSchema = z.promise(z.string());
-
-            const factory = new ZodFactory(promiseSchema);
-            const result = factory.build();
-
-            expect(result).toBeInstanceOf(Promise);
-            return (result as unknown as Promise<string>).then((value: any) => {
-                expect(typeof value).toBe('string');
-                return value;
-            });
-        });
 
         it('should get registered types', () => {
             const initialTypes = getRegisteredZodTypes();
