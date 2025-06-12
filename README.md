@@ -479,6 +479,76 @@ email: factory.internet.email(),
 }));
 For more information about available Faker.js methods, see the [Faker.js documentation](https://fakerjs.dev/api/).
 
+## Zod Integration
+
+Interface-Forge provides seamless integration with [Zod](https://zod.dev/) schemas through the `ZodFactory` class. This allows you to generate mock data that automatically conforms to your Zod schema definitions.
+
+### Basic Zod Usage
+
+```typescript
+import { z } from 'zod';
+import { ZodFactory } from 'interface-forge/zod';
+
+const UserSchema = z.object({
+    id: z.uuid(),
+    name: z.string().min(1).max(100),
+    email: z.email(),
+    age: z.number().int().min(18).max(120),
+});
+
+const userFactory = new ZodFactory(UserSchema);
+const user = userFactory.build();
+// Automatically generates data that conforms to the schema
+```
+
+### Partial Factory Functions
+
+The `ZodFactory` supports **partial factory functions**, allowing you to customize only specific fields while automatically generating the rest from the schema:
+
+```typescript
+const UserSchema = z.object({
+    id: z.uuid(),
+    name: z.string(),
+    email: z.email(),
+    role: z.enum(['admin', 'user', 'guest']),
+    createdAt: z.date(),
+    settings: z.object({
+        theme: z.enum(['light', 'dark']),
+        notifications: z.boolean(),
+    }),
+});
+
+// Partial factory function - only customize what you need
+const userFactory = new ZodFactory(UserSchema, (factory) => ({
+    // Only customize these fields for deterministic test data
+    role: 'user', // Always create regular users
+    name: factory.person.fullName(),
+    settings: {
+        theme: 'light', // Always use light theme in tests
+        // notifications will be auto-generated from schema
+    },
+    // id, email, createdAt will be auto-generated from schema
+}));
+
+const user = userFactory.build();
+// user.role === 'user' (from factory)
+// user.name === 'John Doe' (from factory)
+// user.settings.theme === 'light' (from factory)
+// user.settings.notifications === true/false (auto-generated)
+// user.id === uuid (auto-generated)
+// user.email === valid email (auto-generated)
+// user.createdAt === Date (auto-generated)
+```
+
+### Benefits of Partial Factory Functions
+
+- **Deterministic where needed**: Customize specific fields for predictable test data
+- **Automatic coverage**: Missing fields are automatically generated from the schema
+- **Type safety**: Full TypeScript support with schema validation
+- **Intuitive**: Only specify what you care about, let ZodFactory handle the rest
+
+For complete examples, see the [Zod integration example](./examples/07-zod-integration.ts).
+
 ## Contributing
 
 We welcome contributions from the community! Please read our [contributing guidelines](CONTRIBUTING.md) for more information.

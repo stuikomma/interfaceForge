@@ -730,7 +730,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
     /**
      * Override the generate method to work with Zod schemas
      *
-     * @param _iteration Iteration number (unused)
+     * @param iteration Iteration number
      * @param kwargs Optional partial values to override
      * @returns Generated value that conforms to the Zod schema
      */
@@ -740,17 +740,28 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
     ): z.output<T> {
         let generated: unknown;
 
-        // If a custom factory function was provided, use it
-        if (this.customFactoryFn) {
-            const factoryResult = this.customFactoryFn(this as any, iteration);
+        // Always start with schema-based generation for complete coverage
+        generated = this.generateFactorySchema(
+            this.schema,
+            this.zodConfig,
+        );
+
+        // If a custom factory function was provided, merge its results
+        if (this.customFactoryFn && isObject(generated)) {
+            const factoryResult = this.customFactoryFn(this as unknown as Factory<z.output<T>>, iteration);
             // Convert any generators/refs to actual values
-            generated = this.resolveFactorySchema(factoryResult);
-        } else {
-            // Otherwise use the schema-based generation
-            generated = this.generateFactorySchema(
-                this.schema,
-                this.zodConfig,
-            );
+            const resolvedFactoryResult = this.resolveFactorySchema(factoryResult);
+            
+            if (isObject(resolvedFactoryResult)) {
+                // Merge factory result with generated data, giving priority to factory result
+                generated = {
+                    ...generated,
+                    ...resolvedFactoryResult,
+                };
+            } else {
+                // For non-object schemas, use the factory result directly
+                generated = resolvedFactoryResult;
+            }
         }
 
         if (isObject(kwargs) && isObject(generated)) {
@@ -763,33 +774,37 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         // For non-object schemas (like strings, numbers), parse the value directly
         // Some schemas (like function, promise) might not have a parse method
         if ('parse' in this.schema && typeof this.schema.parse === 'function') {
-            return this.schema.parse(generated as any);
+            return this.schema.parse(generated);
         }
 
         return generated as z.output<T>;
     }
 
     private resolveFactorySchema(schema: unknown): unknown {
-        if (schema && typeof schema === 'object' && 'next' in schema && typeof (schema as any).next === 'function') {
-            // It's a generator
-            return (schema as any).next().value;
-        }
-        
-        if (schema && typeof schema === 'object' && 'callHandler' in schema && typeof (schema as any).callHandler === 'function') {
-            // It's a Ref
-            return (schema as any).callHandler();
-        }
-
-        if (Array.isArray(schema)) {
-            return schema.map(item => this.resolveFactorySchema(item));
-        }
-
-        if (schema && typeof schema === 'object' && schema.constructor === Object) {
-            const result: Record<string, unknown> = {};
-            for (const [key, value] of Object.entries(schema)) {
-                result[key] = this.resolveFactorySchema(value);
+        if (schema && typeof schema === 'object' && schema !== null) {
+            // Check if it's a generator
+            if ('next' in schema && typeof (schema as Generator<unknown>).next === 'function') {
+                return (schema as Generator<unknown>).next().value;
             }
-            return result;
+            
+            // Check if it's a Ref
+            if ('callHandler' in schema && typeof (schema as { callHandler: () => unknown }).callHandler === 'function') {
+                return (schema as { callHandler: () => unknown }).callHandler();
+            }
+
+            // Handle arrays
+            if (Array.isArray(schema)) {
+                return schema.map(item => this.resolveFactorySchema(item));
+            }
+
+            // Handle plain objects
+            if (schema.constructor === Object) {
+                const result: Record<string, unknown> = {};
+                for (const [key, value] of Object.entries(schema)) {
+                    result[key] = this.resolveFactorySchema(value);
+                }
+                return result;
+            }
         }
 
         return schema;

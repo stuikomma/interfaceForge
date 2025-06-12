@@ -227,6 +227,67 @@ profiles.forEach((profile, index) => {
     });
 });
 
+// Partial Factory Functions Example
+// You can provide a partial factory function that only customizes specific fields
+// ZodFactory will automatically generate any missing fields from the schema
+
+const BlogPostSchema = z.object({
+    id: z.uuid(),
+    title: z.string().min(1).max(200),
+    content: z.string().min(10),
+    author: z.object({
+        id: z.uuid(),
+        name: z.string(),
+        email: z.email(),
+    }),
+    tags: z.array(z.string()).min(1).max(5),
+    publishedAt: z.date(),
+    updatedAt: z.date(),
+    views: z.number().int().min(0),
+    likes: z.number().int().min(0),
+    isPublished: z.boolean(),
+});
+
+// Partial factory function - only customize the fields you care about
+const blogPostFactory = new ZodFactory(BlogPostSchema, (factory) => ({
+    // Only customize these specific fields for deterministic test data
+    title: factory.helpers.arrayElement([
+        'Introduction to TypeScript',
+        'Advanced React Patterns',
+        'Database Design Principles',
+        'Testing Best Practices',
+    ]),
+    author: {
+        name: factory.person.fullName(),
+        email: factory.internet.email().toLowerCase(),
+        // id will be auto-generated from schema
+    },
+    tags: factory.helpers.arrayElements(['typescript', 'react', 'testing', 'database', 'javascript'], { min: 2, max: 4 }),
+    isPublished: true, // Always published for our tests
+    // All other fields (id, content, publishedAt, updatedAt, views, likes) 
+    // will be automatically generated based on the Zod schema
+}));
+
+const blogPost = blogPostFactory.build();
+console.log('Generated blog post with partial factory:', {
+    title: blogPost.title,
+    authorName: blogPost.author.name,
+    hasContent: blogPost.content.length > 10,
+    hasId: blogPost.id !== undefined,
+    tagCount: blogPost.tags.length,
+    isPublished: blogPost.isPublished,
+});
+
+// You can still override any field with build() params
+const customBlogPost = blogPostFactory.build({
+    title: 'Custom Title Override',
+    views: 1000,
+});
+console.log('Blog post with overrides:', {
+    title: customBlogPost.title,
+    views: customBlogPost.views,
+});
+
 registerZodType('ZodBigInt', (_schema, factory) => {
     return BigInt(factory.number.int({ max: 1_000_000, min: 0 }));
 });
