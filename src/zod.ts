@@ -108,20 +108,34 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         parse: (data: Record<string, unknown>) => z.output<T>;
     } & T;
     private readonly zodConfig: ZodFactoryConfig;
+    private readonly customFactoryFn?: FactoryFunction<z.output<T>>;
 
-    constructor(schema: T, config?: ZodFactoryConfig) {
-        const { ...factoryOptions } = config ?? {};
+    constructor(schema: T, configOrFactory?: ZodFactoryConfig | FactoryFunction<z.output<T>>, config?: ZodFactoryConfig) {
+        let factoryOptions: ZodFactoryConfig;
+        let factoryFunction: FactoryFunction<z.output<T>>;
+        let customFactoryFn: FactoryFunction<z.output<T>> | undefined;
 
-        const factoryFunction: FactoryFunction<z.output<T>> = () => {
-            return {} as FactorySchema<z.output<T>>;
-        };
+        // Handle overloaded parameters
+        if (typeof configOrFactory === 'function') {
+            // Second parameter is a factory function
+            customFactoryFn = configOrFactory;
+            factoryOptions = config ?? {};
+            factoryFunction = configOrFactory;
+        } else {
+            // Second parameter is config (or undefined)
+            factoryOptions = configOrFactory ?? {};
+            factoryFunction = () => {
+                return {} as FactorySchema<z.output<T>>;
+            };
+        }
 
         super(factoryFunction, factoryOptions);
 
         this.schema = schema as {
             parse: (data: Record<string, unknown>) => z.output<T>;
         } & T;
-        this.zodConfig = config ?? {};
+        this.zodConfig = factoryOptions;
+        this.customFactoryFn = customFactoryFn;
     }
 
     /**
@@ -721,13 +735,23 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
      * @returns Generated value that conforms to the Zod schema
      */
     protected generate(
-        _iteration: number,
+        iteration: number,
         kwargs?: Partial<z.output<T>>,
     ): z.output<T> {
-        const generated = this.generateFactorySchema(
-            this.schema,
-            this.zodConfig,
-        );
+        let generated: unknown;
+
+        // If a custom factory function was provided, use it
+        if (this.customFactoryFn) {
+            const factoryResult = this.customFactoryFn(this as any, iteration);
+            // Convert any generators/refs to actual values
+            generated = this.resolveFactorySchema(factoryResult);
+        } else {
+            // Otherwise use the schema-based generation
+            generated = this.generateFactorySchema(
+                this.schema,
+                this.zodConfig,
+            );
+        }
 
         if (isObject(kwargs) && isObject(generated)) {
             return this.schema.parse({
@@ -743,6 +767,32 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
         }
 
         return generated as z.output<T>;
+    }
+
+    private resolveFactorySchema(schema: unknown): unknown {
+        if (schema && typeof schema === 'object' && 'next' in schema && typeof (schema as any).next === 'function') {
+            // It's a generator
+            return (schema as any).next().value;
+        }
+        
+        if (schema && typeof schema === 'object' && 'callHandler' in schema && typeof (schema as any).callHandler === 'function') {
+            // It's a Ref
+            return (schema as any).callHandler();
+        }
+
+        if (Array.isArray(schema)) {
+            return schema.map(item => this.resolveFactorySchema(item));
+        }
+
+        if (schema && typeof schema === 'object' && schema.constructor === Object) {
+            const result: Record<string, unknown> = {};
+            for (const [key, value] of Object.entries(schema)) {
+                result[key] = this.resolveFactorySchema(value);
+            }
+            return result;
+        }
+
+        return schema;
     }
 
     private generateNumberGenerator(schema: z.ZodNumber): number {
