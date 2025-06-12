@@ -100,8 +100,7 @@ const zodTypeRegistry = new ZodTypeRegistry();
 /**
  * A Factory class that extends the base Factory to work with Zod schemas
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
+export class ZodFactory<T extends z.ZodObject> extends Factory<
     z.output<T>
 > {
     private readonly schema: {
@@ -148,7 +147,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
     batch = (
         size: number,
         kwargs?: Partial<z.output<T>> | Partial<z.output<T>>[],
-    ) => {
+    ): z.output<T>[] => {
         if (!Number.isInteger(size) || size < 0) {
             throw new Error('Batch size must be a non-negative integer');
         }
@@ -185,7 +184,7 @@ export class ZodFactory<T extends $ZodType<any, any, any>> extends Factory<
      * @param kwargs Optional properties to override in the generated instance
      * @returns A promise that resolves to the built and validated instance
      */
-    async buildAsync(kwargs?: Partial<z.output<T>>) {
+    async buildAsync(kwargs?: Partial<z.output<T>>): Promise<z.output<T>> {
         const result = await super.buildAsync(kwargs);
 
         return this.schema.parse(result);

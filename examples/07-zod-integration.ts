@@ -273,7 +273,7 @@ console.log('Generated blog post with partial factory:', {
     title: blogPost.title,
     authorName: blogPost.author.name,
     hasContent: blogPost.content.length > 10,
-    hasId: blogPost.id !== undefined,
+    hasId: Boolean(blogPost.id),
     tagCount: blogPost.tags.length,
     isPublished: blogPost.isPublished,
 });
