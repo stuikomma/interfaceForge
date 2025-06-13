@@ -723,11 +723,11 @@ const ProblematicSchema = z.object({
         level2: z.object({
             level3: z.object({
                 level4: z.object({
-                    value: z.string() // Required field
-                })
-            })
-        })
-    })
+                    value: z.string(), // Required field
+                }),
+            }),
+        }),
+    }),
 });
 
 const factory = new ZodFactory(ProblematicSchema, { maxDepth: 3 });
@@ -739,22 +739,26 @@ const CompatibleSchema = z.object({
     level1: z.object({
         level2: z.object({
             level3: z.object({
-                level4: z.object({
-                    value: z.string()
-                }).optional() // Make deep nesting optional
-            })
-        })
-    })
+                level4: z
+                    .object({
+                        value: z.string(),
+                    })
+                    .optional(), // Make deep nesting optional
+            }),
+        }),
+    }),
 });
 
 const factory = new ZodFactory(CompatibleSchema, { maxDepth: 3 });
 const result = factory.build(); // Works correctly
 
 // ✅ Best: Design recursive schemas with optional children
-const RecursiveSchema = z.lazy(() => z.object({
-    name: z.string(),
-    children: z.array(RecursiveSchema).optional() // Self-referencing with optional
-}));
+const RecursiveSchema = z.lazy(() =>
+    z.object({
+        name: z.string(),
+        children: z.array(RecursiveSchema).optional(), // Self-referencing with optional
+    }),
+);
 
 const recursiveFactory = new ZodFactory(RecursiveSchema, { maxDepth: 3 });
 ```

@@ -30,8 +30,8 @@ jobs:
               run: pnpm build
             - name: Generate documentation
               run: |
-                  pnpm docs --no-browser
-                  pnpm docs:markdown
+                  pnpm gen:docs
+                  pnpm gen:docs:markdown
             - name: Setup Pages
               uses: actions/configure-pages@v5
             - name: Upload HTML docs artifact

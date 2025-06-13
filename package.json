@@ -63,10 +63,10 @@
         "test": "vitest run",
         "test:coverage": "vitest run --coverage",
         "typecheck": "tsc --noEmit",
-        "docs": "typedoc",
-        "docs:markdown": "typedoc --options typedoc-markdown.json",
-        "docs:all": "pnpm docs --no-browser && pnpm docs:markdown",
-        "docs:serve": "pnpm docs && http-server docs -p 8081 -o -c-1"
+        "gen:docs": "./node_modules/.bin/typedoc",
+        "gen:docs:markdown": "typedoc --options typedoc-markdown.json",
+        "gen:docs:all": "pnpm gen:docs && pnpm gen:docs:markdown",
+        "gen:docs:serve": "pnpm gen:docs && http-server docs -p 8081 -o -c-1"
     },
     "devDependencies": {
         "@commitlint/cli": "^19.8.1",
