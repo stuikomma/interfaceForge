@@ -30,7 +30,6 @@ interface Post {
     title: string;
 }
 
-// Define interfaces with circular dependencies
 interface User {
     favoritePost?: Post;
     id: string;
@@ -38,7 +37,6 @@ interface User {
     posts: Post[];
 }
 
-// Example 1: User and Posts with circular references
 const UserFactory: Factory<User> = new Factory<User>((faker) => ({
     favoritePost: faker.use(() => PostFactory.build()),
     id: faker.string.uuid(),
@@ -54,13 +52,11 @@ const PostFactory: Factory<Post> = new Factory<Post>((faker) => ({
     title: faker.lorem.sentence(),
 }));
 
-// Build a user with posts
 const user = UserFactory.build();
 console.log('User:', user.name);
 console.log('Posts by user:', user.posts.length);
 console.log('Favorite post:', user.favoritePost?.title);
 
-// Example 2: Organizational hierarchy with circular references
 const DepartmentFactory: Factory<Department> = new Factory<Department>(
     (faker) => ({
         employees: faker.use(() => EmployeeFactory.batch(5)),
@@ -82,7 +78,6 @@ const EmployeeFactory: Factory<Employee> = new Factory<Employee>((faker) => ({
         : undefined,
 }));
 
-// Example 3: Controlling recursion depth
 const LimitedUserFactory: Factory<User> = new Factory<User>(
     (faker) => ({
         favoritePost: undefined,
@@ -90,7 +85,7 @@ const LimitedUserFactory: Factory<User> = new Factory<User>(
         name: faker.person.fullName(),
         posts: faker.use(() => LimitedPostFactory.batch(2)),
     }),
-    { maxDepth: 3 }, // Limit nesting to 3 levels
+    { maxDepth: 3 },
 );
 
 const LimitedPostFactory: Factory<Post> = new Factory<Post>(
@@ -104,19 +99,14 @@ const LimitedPostFactory: Factory<Post> = new Factory<Post>(
     { maxDepth: 3 },
 );
 
-// This will stop creating nested objects after 3 levels
 const limitedUser = LimitedUserFactory.build();
 console.log('Limited depth user:', limitedUser);
 
-// Example 4: Building specific relationship patterns
 const createUserWithOwnPosts = () => {
-    // First create the user without posts
     const user = UserFactory.build({ favoritePost: undefined, posts: [] });
 
-    // Then create posts that reference this specific user
     const posts = PostFactory.batch(3, { author: user });
 
-    // Update the user's posts
     user.posts = posts;
     [user.favoritePost] = posts;
 
@@ -131,7 +121,6 @@ console.log(
     ),
 );
 
-// Example 5: Graph structures with self-references
 interface GraphNode {
     connections: GraphNode[];
     id: string;
@@ -148,7 +137,6 @@ const GraphNodeFactory: Factory<GraphNode> = new Factory<GraphNode>(
     }),
 );
 
-// Create a graph with limited depth to avoid infinite recursion
 const graphRoot = new Factory<GraphNode>(
     (faker) => ({
         connections: faker.use(() => GraphNodeFactory.batch(3)),

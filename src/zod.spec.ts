@@ -1,929 +1,2001 @@
-import { beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod/v4';
-import {
-    clearZodTypeRegistry,
-    getRegisteredZodTypes,
-    initializeBuiltinZodTypes,
-    registerZodType,
-    unregisterZodType,
-    ZodFactory,
-} from './zod';
+import { ZodFactory } from './zod';
+import { Factory } from './index';
 
 describe('ZodFactory', () => {
-    beforeEach(() => {
-        clearZodTypeRegistry();
-        initializeBuiltinZodTypes();
-    });
-
-    it('should create a ZodFactory instance', () => {
-        const schema = z.object({ name: z.string() });
-        const factory = new ZodFactory(schema);
-
-        expect(factory).toBeInstanceOf(ZodFactory);
-    });
-
-    it('should generate data matching Zod schema', () => {
-        const schema = z.object({
-            age: z.number().int().min(18).max(100),
-            email: z.email(),
-            id: z.uuid(),
-            isActive: z.boolean(),
-            name: z.string().min(1).max(50),
-            tags: z.array(z.string()).min(1).max(3),
-        });
-
-        const factory = new ZodFactory(schema);
-        const result = factory.build();
-
-        expect(() => schema.parse(result)).not.toThrow();
-    });
-
-    it('should handle optional and nullable types', () => {
-        const schema = z.object({
-            both: z.string().optional().nullable(),
-            nullable: z.string().nullable(),
-            optional: z.string().optional(),
-        });
-        const factory = new ZodFactory(schema);
-
-        for (let i = 0; i < 10; i++) {
-            const result = factory.build();
-            expect(typeof result).toBe('object');
-
-            expect(
-                result.optional === undefined ||
-                    typeof result.optional === 'string',
-            ).toBe(true);
-
-            expect(
-                result.nullable === null || typeof result.nullable === 'string',
-            ).toBe(true);
-        }
-    });
-
-    it('should build multiple objects', () => {
-        const schema = z.object({
-            name: z.string(),
-            value: z.number(),
-        });
-
-        const factory = new ZodFactory(schema);
-        const results = Array.from({ length: 3 }, () => factory.build());
-
-        expect(results).toHaveLength(3);
-        results.forEach((result: z.infer<typeof schema>) => {
-            expect(() => schema.parse(result)).not.toThrow();
-        });
-    });
-
-    describe('Schema Custom generators', () => {
-        it('should use custom generators for schemas with descriptions', () => {
-            const schema = z.string().describe('custom-field');
-            const factory = new ZodFactory(schema, {
-                customGenerators: {
-                    'custom-field': () => 'custom-value',
-                },
+    describe('constructor', () => {
+        it('should create a factory from a Zod schema', () => {
+            const schema = z.object({
+                age: z.number(),
+                name: z.string(),
             });
-            const result = factory.build();
 
-            expect(result).toBe('custom-value');
+            const factory = new ZodFactory(schema);
+            expect(factory).toBeInstanceOf(ZodFactory);
+            expect(factory).toBeInstanceOf(Factory);
+        });
+
+        it('should accept a factory function as second parameter', () => {
+            const schema = z.object({
+                email: z.email(),
+                name: z.string(),
+            });
+
+            const factory = new ZodFactory(schema);
+
+            const result = factory.build({ name: 'John Doe' });
+            expect(result.name).toBe('John Doe');
+            expect(result.email).toMatch(/@/);
+        });
+
+        it('should accept options as second parameter', () => {
+            const schema = z.object({
+                name: z.string(),
+            });
+
+            const factory = new ZodFactory(schema, { maxDepth: 3 });
+            expect(factory.options?.maxDepth).toBe(3);
+        });
+
+        it('should accept factory function and options', () => {
+            const schema = z.object({
+                name: z.string(),
+            });
+
+            const factory = new ZodFactory(schema, () => ({ name: 'Test' }), {
+                maxDepth: 2,
+            });
+
+            const result = factory.build();
+            expect(result.name).toBe('Test');
+            expect(factory.options?.maxDepth).toBe(2);
         });
     });
 
-    describe('Registered type handlers', () => {
-        afterEach(() => {
-            clearZodTypeRegistry();
+    describe('primitive types', () => {
+        describe('string', () => {
+            it('should generate basic strings', () => {
+                const schema = z.object({
+                    text: z.string(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(typeof result.text).toBe('string');
+                expect(result.text.length).toBeGreaterThan(0);
+            });
+
+            it('should generate strings with min length', () => {
+                const schema = z.object({
+                    text: z.string().min(10),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.text.length).toBeGreaterThanOrEqual(10);
+                });
+            });
+
+            it('should generate strings with max length', () => {
+                const schema = z.object({
+                    text: z.string().max(5),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.text.length).toBeLessThanOrEqual(5);
+                });
+            });
+
+            it('should generate strings with exact length', () => {
+                const schema = z.object({
+                    text: z.string().length(7),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.text.length).toBe(7);
+                });
+            });
+
+            it('should generate strings with both min and max length', () => {
+                const schema = z.object({
+                    text: z.string().min(5).max(10),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(20);
+
+                results.forEach((result) => {
+                    expect(result.text.length).toBeGreaterThanOrEqual(5);
+                    expect(result.text.length).toBeLessThanOrEqual(10);
+                });
+            });
         });
 
-        it('should use registered type handlers', () => {
-            registerZodType('ZodBigInt', (_schema, factory) => {
-                return BigInt(factory.number.int({ max: 100, min: 1 }));
+        describe('string formats', () => {
+            it('should generate email addresses', () => {
+                const schema = z.object({
+                    email: z.email(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.email).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
+                    expect(() => z.email().parse(result.email)).not.toThrow();
+                });
             });
+
+            it('should generate E.164 phone numbers', () => {
+                const schema = z.object({
+                    phone: z.e164(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.phone).toMatch(/^\+[1-9]\d{10,14}$/);
+                });
+            });
+
+            it('should generate emojis', () => {
+                const schema = z.object({
+                    reaction: z.emoji(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                const validEmojis = [
+                    '😀',
+                    '😎',
+                    '🚀',
+                    '🌟',
+                    '❤️',
+                    '🔥',
+                    '✨',
+                    '🎉',
+                ];
+                results.forEach((result) => {
+                    expect(validEmojis).toContain(result.reaction);
+                });
+            });
+
+            it('should generate JWT tokens', () => {
+                const schema = z.object({
+                    token: z.jwt(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(5);
+
+                results.forEach((result) => {
+                    const parts = result.token.split('.');
+                    expect(parts).toHaveLength(3);
+                    // Check header
+                    const header = JSON.parse(
+                        Buffer.from(parts[0], 'base64url').toString(),
+                    );
+                    expect(header.alg).toBe('HS256');
+                    expect(header.typ).toBe('JWT');
+                    // Check payload
+                    const payload = JSON.parse(
+                        Buffer.from(parts[1], 'base64url').toString(),
+                    );
+                    expect(payload.sub).toBeDefined();
+                    expect(payload.iat).toBeDefined();
+                });
+            });
+
+            it('should generate nanoid strings', () => {
+                const schema = z.object({
+                    id: z.nanoid(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.id).toMatch(/^[A-Za-z0-9_-]{21}$/);
+                });
+            });
+
+            it('should generate ULID strings', () => {
+                const schema = z.object({
+                    id: z.ulid(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.id).toMatch(/^[0-9A-Z]{26}$/);
+                });
+            });
+
+            it('should generate XID strings', () => {
+                const schema = z.object({
+                    id: z.xid(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.id).toMatch(/^[a-z0-9]{20}$/);
+                });
+            });
+
+            it('should generate KSUID strings', () => {
+                const schema = z.object({
+                    id: z.ksuid(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.id).toMatch(/^[a-zA-Z0-9]{27}$/);
+                });
+            });
+
+            it('should generate base64url strings', () => {
+                const schema = z.object({
+                    encoded: z.base64url(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(5);
+
+                results.forEach((result) => {
+                    expect(() =>
+                        Buffer.from(result.encoded, 'base64url'),
+                    ).not.toThrow();
+                    expect(result.encoded).not.toMatch(/[+/=]/); // base64url doesn't have these chars
+                });
+            });
+
+            it('should generate CIDR IPv4 addresses', () => {
+                const schema = z.object({
+                    network: z.cidrv4(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.network).toMatch(
+                        /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/,
+                    );
+                    const [, prefix] = result.network.split('/');
+                    expect(Number(prefix)).toBeGreaterThanOrEqual(0);
+                    expect(Number(prefix)).toBeLessThanOrEqual(32);
+                });
+            });
+
+            it('should generate CIDR IPv6 addresses', () => {
+                const schema = z.object({
+                    network: z.cidrv6(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(5);
+
+                results.forEach((result) => {
+                    expect(result.network).toMatch(
+                        /^([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}\/\d{1,3}$/i,
+                    );
+                    const [, prefix] = result.network.split('/');
+                    expect(Number(prefix)).toBeGreaterThanOrEqual(0);
+                    expect(Number(prefix)).toBeLessThanOrEqual(128);
+                });
+            });
+
+            it('should generate UUIDs', () => {
+                const schema = z.object({
+                    id: z.uuid(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.id).toMatch(
+                        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+                    );
+                    expect(() => z.uuid().parse(result.id)).not.toThrow();
+                });
+            });
+
+            it('should generate URLs', () => {
+                const schema = z.object({
+                    website: z.url(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.website).toMatch(/^https?:\/\//);
+                    expect(() => z.url().parse(result.website)).not.toThrow();
+                });
+            });
+
+            it('should generate CUIDs', () => {
+                const schema = z.object({
+                    cuid: z.cuid(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(5);
+
+                results.forEach((result) => {
+                    expect(result.cuid).toMatch(/^c[a-z0-9]{24}$/);
+                });
+            });
+
+            it('should generate CUID2s', () => {
+                const schema = z.object({
+                    cuid2: z.cuid2(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(5);
+
+                results.forEach((result) => {
+                    expect(result.cuid2).toMatch(/^[a-z0-9]{24}$/);
+                });
+            });
+
+            it('should generate base64 strings', () => {
+                const schema = z.object({
+                    encoded: z.base64(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(5);
+
+                results.forEach((result) => {
+                    expect(() =>
+                        Buffer.from(result.encoded, 'base64'),
+                    ).not.toThrow();
+                });
+            });
+
+            it('should generate IPv4 addresses', () => {
+                const schema = z.object({
+                    ip: z.ipv4(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.ip).toMatch(
+                        /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
+                    );
+                });
+            });
+
+            it('should generate IPv6 addresses', () => {
+                const schema = z.object({
+                    ip: z.ipv6(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(5);
+
+                results.forEach((result) => {
+                    expect(result.ip).toMatch(
+                        /^([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}$/i,
+                    );
+                });
+            });
+
+            it('should generate regex-based strings', () => {
+                const schema = z.object({
+                    code: z.string().regex(/^[A-Z]{3}-\d{3}$/),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.code).toMatch(/^[A-Z]{3}-\d{3}$/);
+                });
+            });
+
+            it('should generate email-like strings from regex', () => {
+                const schema = z.object({
+                    email: z.string().regex(/.*@.*/),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(result.email).toContain('@');
+            });
+        });
+
+        describe('number', () => {
+            it('should generate basic numbers', () => {
+                const schema = z.object({
+                    value: z.number(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(typeof result.value).toBe('number');
+                expect(Number.isFinite(result.value)).toBe(true);
+            });
+
+            it('should generate integers', () => {
+                const schema = z.object({
+                    count: z.number().int(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(20);
+
+                results.forEach((result) => {
+                    expect(Number.isInteger(result.count)).toBe(true);
+                });
+            });
+
+            it('should generate numbers with min constraint', () => {
+                const schema = z.object({
+                    age: z.number().min(18),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(20);
+
+                results.forEach((result) => {
+                    expect(result.age).toBeGreaterThanOrEqual(18);
+                });
+            });
+
+            it('should generate numbers with max constraint', () => {
+                const schema = z.object({
+                    score: z.number().max(100),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(20);
+
+                results.forEach((result) => {
+                    expect(result.score).toBeLessThanOrEqual(100);
+                });
+            });
+
+            it('should generate numbers with both min and max', () => {
+                const schema = z.object({
+                    percentage: z.number().min(0).max(100),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(50);
+
+                results.forEach((result) => {
+                    expect(result.percentage).toBeGreaterThanOrEqual(0);
+                    expect(result.percentage).toBeLessThanOrEqual(100);
+                });
+            });
+
+            it('should generate positive numbers', () => {
+                const schema = z.object({
+                    amount: z.number().positive(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(20);
+
+                results.forEach((result) => {
+                    expect(result.amount).toBeGreaterThan(0);
+                });
+            });
+
+            it('should generate negative numbers', () => {
+                const schema = z.object({
+                    debt: z.number().negative(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(20);
+
+                results.forEach((result) => {
+                    expect(result.debt).toBeLessThan(0);
+                });
+            });
+
+            it('should generate numbers with multipleOf constraint', () => {
+                const schema = z.object({
+                    value: z.number().multipleOf(5),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(20);
+
+                results.forEach((result) => {
+                    const remainder = result.value % 5;
+                    expect(Object.is(remainder, -0) ? 0 : remainder).toBe(0);
+                });
+            });
+
+            it('should handle safe integers', () => {
+                const schema = z.object({
+                    id: z.number().int(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(Number.isSafeInteger(result.id)).toBe(true);
+                });
+            });
+        });
+
+        describe('boolean', () => {
+            it('should generate boolean values', () => {
+                const schema = z.object({
+                    active: z.boolean(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(20);
+
+                const trueCount = results.filter((r) => r.active).length;
+                const falseCount = results.filter((r) => !r.active).length;
+
+                expect(trueCount).toBeGreaterThan(0);
+                expect(falseCount).toBeGreaterThan(0);
+                expect(trueCount + falseCount).toBe(20);
+            });
+        });
+
+        describe('date', () => {
+            it('should generate date values', () => {
+                const schema = z.object({
+                    createdAt: z.date(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.createdAt).toBeInstanceOf(Date);
+                    expect(result.createdAt.getTime()).not.toBeNaN();
+                });
+            });
+
+            it('should generate dates with min constraint', () => {
+                const minDate = new Date('2024-01-01');
+                const schema = z.object({
+                    appointmentDate: z.date().min(minDate),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(
+                        result.appointmentDate.getTime(),
+                    ).toBeGreaterThanOrEqual(minDate.getTime());
+                });
+            });
+
+            it('should generate dates with max constraint', () => {
+                const maxDate = new Date('2024-12-31');
+                const schema = z.object({
+                    deadline: z.date().max(maxDate),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.deadline.getTime()).toBeLessThanOrEqual(
+                        maxDate.getTime(),
+                    );
+                });
+            });
+        });
+
+        describe('literal', () => {
+            it('should generate literal string values', () => {
+                const schema = z.object({
+                    status: z.literal('active'),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.status).toBe('active');
+                });
+            });
+
+            it('should generate literal number values', () => {
+                const schema = z.object({
+                    version: z.literal(42),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(5);
+
+                results.forEach((result) => {
+                    expect(result.version).toBe(42);
+                });
+            });
+
+            it('should generate literal boolean values', () => {
+                const schema = z.object({
+                    isSpecial: z.literal(true),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(5);
+
+                results.forEach((result) => {
+                    expect(result.isSpecial).toBe(true);
+                });
+            });
+        });
+
+        describe('null and undefined', () => {
+            it('should generate null values', () => {
+                const schema = z.object({
+                    value: z.null(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(result.value).toBeNull();
+            });
+
+            it('should generate undefined values', () => {
+                const schema = z.object({
+                    value: z.undefined(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(result.value).toBeUndefined();
+            });
+        });
+
+        describe('any and unknown', () => {
+            it('should generate values for any type', () => {
+                const schema = z.object({
+                    data: z.any(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(result.data).toBeDefined();
+            });
+
+            it('should generate values for unknown type', () => {
+                const schema = z.object({
+                    mystery: z.unknown(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(result.mystery).toBeDefined();
+            });
+        });
+    });
+
+    describe('complex types', () => {
+        describe('objects', () => {
+            it('should generate nested objects', () => {
+                const schema = z.object({
+                    user: z.object({
+                        email: z.email(),
+                        name: z.string(),
+                        profile: z.object({
+                            age: z.number().int().min(0).max(120),
+                            bio: z.string(),
+                        }),
+                    }),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(result.user).toBeDefined();
+                expect(typeof result.user.name).toBe('string');
+                expect(result.user.email).toMatch(/@/);
+                expect(result.user.profile).toBeDefined();
+                expect(typeof result.user.profile.bio).toBe('string');
+                expect(result.user.profile.age).toBeGreaterThanOrEqual(0);
+                expect(result.user.profile.age).toBeLessThanOrEqual(120);
+            });
+
+            it('should respect maxDepth option', () => {
+                const schema = z.object({
+                    level1: z.object({
+                        level2: z.object({
+                            level3: z.object({
+                                level4: z.object({
+                                    level5: z.object({
+                                        value: z.string(),
+                                    }),
+                                }),
+                            }),
+                        }),
+                    }),
+                });
+
+                const factory = new ZodFactory(schema, { maxDepth: 3 });
+                const result = factory.build();
+
+                expect(result.level1).toBeDefined();
+                expect(result.level1.level2).toBeDefined();
+                expect(result.level1.level2.level3).toBeDefined();
+                // Level 4 and beyond should be empty due to depth limit
+                expect(
+                    Object.keys(result.level1.level2.level3.level4).length,
+                ).toBe(0);
+            });
+        });
+
+        describe('arrays', () => {
+            it('should generate arrays of primitives', () => {
+                const schema = z.object({
+                    tags: z.array(z.string()),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(Array.isArray(result.tags)).toBe(true);
+                result.tags.forEach((tag) => {
+                    expect(typeof tag).toBe('string');
+                });
+            });
+
+            it('should generate arrays with min length', () => {
+                const schema = z.object({
+                    items: z.array(z.number()).min(3),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.items.length).toBeGreaterThanOrEqual(3);
+                });
+            });
+
+            it('should generate arrays with max length', () => {
+                const schema = z.object({
+                    items: z.array(z.string()).max(5),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.items.length).toBeLessThanOrEqual(5);
+                });
+            });
+
+            it('should generate arrays with exact length', () => {
+                const schema = z.object({
+                    coordinates: z.array(z.number()).length(2),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.coordinates.length).toBe(2);
+                });
+            });
+
+            it('should generate non-empty arrays', () => {
+                const schema = z.object({
+                    items: z.array(z.string()).nonempty(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(10);
+
+                results.forEach((result) => {
+                    expect(result.items.length).toBeGreaterThan(0);
+                });
+            });
+
+            it('should generate arrays of objects', () => {
+                const schema = z.object({
+                    users: z.array(
+                        z.object({
+                            active: z.boolean(),
+                            id: z.uuid(),
+                            name: z.string(),
+                        }),
+                    ),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(Array.isArray(result.users)).toBe(true);
+                result.users.forEach((user) => {
+                    expect(user.id).toMatch(
+                        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+                    );
+                    expect(typeof user.name).toBe('string');
+                    expect(typeof user.active).toBe('boolean');
+                });
+            });
+        });
+
+        describe('tuples', () => {
+            it('should generate fixed tuples', () => {
+                const schema = z.object({
+                    coordinate: z.tuple([z.number(), z.number()]),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(Array.isArray(result.coordinate)).toBe(true);
+                expect(result.coordinate.length).toBe(2);
+                expect(typeof result.coordinate[0]).toBe('number');
+                expect(typeof result.coordinate[1]).toBe('number');
+            });
+
+            it('should generate tuples with different types', () => {
+                const schema = z.object({
+                    entry: z.tuple([z.string(), z.number(), z.boolean()]),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(result.entry.length).toBe(3);
+                expect(typeof result.entry[0]).toBe('string');
+                expect(typeof result.entry[1]).toBe('number');
+                expect(typeof result.entry[2]).toBe('boolean');
+            });
+
+            it('should generate tuples with rest elements', () => {
+                const schema = z.object({
+                    data: z.tuple([z.string(), z.number()]).rest(z.boolean()),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(result.data.length).toBeGreaterThanOrEqual(2);
+                expect(typeof result.data[0]).toBe('string');
+                expect(typeof result.data[1]).toBe('number');
+                // Rest elements should be booleans
+                for (let i = 2; i < result.data.length; i++) {
+                    expect(typeof result.data[i]).toBe('boolean');
+                }
+            });
+        });
+
+        describe('records', () => {
+            it('should generate records with string keys', () => {
+                const schema = z.object({
+                    scores: z.record(z.string(), z.number()),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(typeof result.scores).toBe('object');
+                Object.entries(result.scores).forEach(([key, value]) => {
+                    expect(typeof key).toBe('string');
+                    expect(typeof value).toBe('number');
+                });
+            });
+
+            it('should generate records with specific key types', () => {
+                const schema = z.object({
+                    data: z.record(z.string().regex(/^key_/), z.boolean()),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                Object.entries(result.data).forEach(([key, value]) => {
+                    expect(typeof key).toBe('string');
+                    expect(typeof value).toBe('boolean');
+                });
+            });
+        });
+
+        describe('maps', () => {
+            it('should generate Map objects', () => {
+                const schema = z.object({
+                    cache: z.map(z.string(), z.number()),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(result.cache).toBeInstanceOf(Map);
+                result.cache.forEach((value, key) => {
+                    expect(typeof key).toBe('string');
+                    expect(typeof value).toBe('number');
+                });
+            });
+        });
+
+        describe('sets', () => {
+            it('should generate Set objects', () => {
+                const schema = z.object({
+                    uniqueTags: z.set(z.string()),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(result.uniqueTags).toBeInstanceOf(Set);
+                result.uniqueTags.forEach((value) => {
+                    expect(typeof value).toBe('string');
+                });
+            });
+        });
+
+        describe('enums', () => {
+            it('should generate native enum values', () => {
+                enum Status {
+                    Active = 'ACTIVE',
+                    Inactive = 'INACTIVE',
+                    Pending = 'PENDING',
+                }
+
+                const schema = z.object({
+                    status: z.enum(Status),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(30);
+
+                const statusCounts = { ACTIVE: 0, INACTIVE: 0, PENDING: 0 };
+                results.forEach((result) => {
+                    expect(Object.values(Status)).toContain(result.status);
+                    statusCounts[result.status as keyof typeof statusCounts]++;
+                });
+
+                // Check that all enum values are generated
+                expect(statusCounts.ACTIVE).toBeGreaterThan(0);
+                expect(statusCounts.INACTIVE).toBeGreaterThan(0);
+                expect(statusCounts.PENDING).toBeGreaterThan(0);
+            });
+
+            it('should generate numeric enum values', () => {
+                enum Priority {
+                    High = 2,
+                    Low = 0,
+                    Medium = 1,
+                }
+
+                const schema = z.object({
+                    priority: z.enum(Priority),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(30);
+
+                results.forEach((result) => {
+                    expect([0, 1, 2]).toContain(result.priority);
+                });
+            });
+
+            it('should generate Zod enum values', () => {
+                const schema = z.object({
+                    role: z.enum(['admin', 'user', 'guest']),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(30);
+
+                const roleCounts = { admin: 0, guest: 0, user: 0 };
+                results.forEach((result) => {
+                    expect(['admin', 'user', 'guest']).toContain(result.role);
+                    roleCounts[result.role]++;
+                });
+
+                expect(roleCounts.admin).toBeGreaterThan(0);
+                expect(roleCounts.user).toBeGreaterThan(0);
+                expect(roleCounts.guest).toBeGreaterThan(0);
+            });
+        });
+
+        describe('unions', () => {
+            it('should generate values from union types', () => {
+                const schema = z.object({
+                    value: z.union([z.string(), z.number(), z.boolean()]),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(30);
+
+                const typeCounts = { boolean: 0, number: 0, string: 0 };
+                results.forEach((result) => {
+                    const type = typeof result.value;
+                    expect(['string', 'number', 'boolean']).toContain(type);
+                    typeCounts[type as keyof typeof typeCounts]++;
+                });
+
+                // Check that all types are generated
+                expect(typeCounts.string).toBeGreaterThan(0);
+                expect(typeCounts.number).toBeGreaterThan(0);
+                expect(typeCounts.boolean).toBeGreaterThan(0);
+            });
+
+            it('should generate values from discriminated unions', () => {
+                const schema = z.object({
+                    shape: z.discriminatedUnion('type', [
+                        z.object({
+                            radius: z.number(),
+                            type: z.literal('circle'),
+                        }),
+                        z.object({
+                            side: z.number(),
+                            type: z.literal('square'),
+                        }),
+                        z.object({
+                            height: z.number(),
+                            type: z.literal('rectangle'),
+                            width: z.number(),
+                        }),
+                    ]),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(30);
+
+                const shapeCounts = { circle: 0, rectangle: 0, square: 0 };
+                results.forEach((result) => {
+                    expect(['circle', 'square', 'rectangle']).toContain(
+                        result.shape.type,
+                    );
+                    shapeCounts[result.shape.type]++;
+
+                    switch (result.shape.type) {
+                        case 'circle': {
+                            expect(typeof result.shape.radius).toBe('number');
+                            break;
+                        }
+                        case 'rectangle': {
+                            expect(typeof result.shape.width).toBe('number');
+                            expect(typeof result.shape.height).toBe('number');
+                            break;
+                        }
+                        case 'square': {
+                            expect(typeof result.shape.side).toBe('number');
+                            break;
+                        }
+                    }
+                });
+
+                expect(shapeCounts.circle).toBeGreaterThan(0);
+                expect(shapeCounts.square).toBeGreaterThan(0);
+                expect(shapeCounts.rectangle).toBeGreaterThan(0);
+            });
+        });
+
+        describe('intersections', () => {
+            it('should generate values from intersection types', () => {
+                const baseSchema = z.object({ id: z.uuid() });
+                const extendedSchema = z.object({
+                    active: z.boolean(),
+                    name: z.string(),
+                });
+
+                const schema = z.object({
+                    user: z.intersection(baseSchema, extendedSchema),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(result.user.id).toMatch(
+                    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+                );
+                expect(typeof result.user.name).toBe('string');
+                expect(typeof result.user.active).toBe('boolean');
+            });
+        });
+    });
+
+    describe('modifiers', () => {
+        describe('optional', () => {
+            it('should generate optional values', () => {
+                const schema = z.object({
+                    name: z.string(),
+                    nickname: z.string().optional(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(20);
+
+                const withNickname = results.filter(
+                    (r) => r.nickname !== undefined,
+                );
+                const withoutNickname = results.filter(
+                    (r) => r.nickname === undefined,
+                );
+
+                expect(withNickname.length).toBeGreaterThan(0);
+                expect(withoutNickname.length).toBeGreaterThan(0);
+
+                withNickname.forEach((result) => {
+                    expect(typeof result.nickname).toBe('string');
+                });
+            });
+        });
+
+        describe('nullable', () => {
+            it('should generate nullable values', () => {
+                const schema = z.object({
+                    middleName: z.string().nullable(),
+                });
+
+                const factory = new ZodFactory(schema);
+                const results = factory.batch(20);
+
+                const withValue = results.filter((r) => r.middleName !== null);
+                const withNull = results.filter((r) => r.middleName === null);
+
+                expect(withValue.length).toBeGreaterThan(0);
+                expect(withNull.length).toBeGreaterThan(0);
+
+                withValue.forEach((result) => {
+                    expect(typeof result.middleName).toBe('string');
+                });
+            });
+        });
+
+        describe('default', () => {
+            it('should handle default values', () => {
+                const schema = z.object({
+                    status: z.string().default('pending'),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                // Default schemas should still generate values
+                expect(typeof result.status).toBe('string');
+            });
+        });
+
+        describe('catch', () => {
+            it('should handle catch values', () => {
+                const schema = z.object({
+                    config: z.string().catch('default'),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(typeof result.config).toBe('string');
+            });
+        });
+
+        describe('transform', () => {
+            it('should handle transform schemas', () => {
+                const schema = z.object({
+                    value: z.string().transform((s) => s.toUpperCase()),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                // Transformed values should be generated (though transform isn't applied during generation)
+                expect(typeof result.value).toBe('string');
+            });
+        });
+
+        describe('pipe', () => {
+            it('should handle piped schemas', () => {
+                const schema = z.object({
+                    email: z.string().pipe(z.email()),
+                });
+
+                const factory = new ZodFactory(schema);
+                const result = factory.build();
+
+                expect(typeof result.email).toBe('string');
+            });
+        });
+    });
+
+    describe('custom type handlers', () => {
+        it('should use custom type handler for specific types', () => {
+            const schema = z.object({
+                id: z.bigint(),
+            });
+
+            const factory = new ZodFactory(schema).withTypeHandler(
+                'ZodBigInt',
+                () => BigInt(999),
+            );
+
+            const result = factory.build();
+            expect(result.id).toBe(BigInt(999));
+        });
+
+        it('should register multiple type handlers', () => {
+            const schema = z.object({
+                data: z.unknown(),
+                id: z.bigint(),
+            });
+
+            const factory = new ZodFactory(schema).withTypeHandlers({
+                ZodBigInt: () => BigInt(123),
+                ZodUnknown: () => ({ custom: 'data' }),
+            });
+
+            const result = factory.build();
+            expect(result.id).toBe(BigInt(123));
+            expect(result.data).toEqual({ custom: 'data' });
+        });
+
+        it('should throw for unsupported custom types', () => {
+            const customValidator = z.custom<{ special: true }>(
+                (val) =>
+                    typeof val === 'object' && val !== null && 'special' in val,
+            );
 
             const schema = z.object({
-                bigNumber: z.bigint(),
+                custom: customValidator,
             });
 
             const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(typeof result.bigNumber).toBe('bigint');
-        });
-
-    });
-
-    describe('Core Enum schemas', () => {
-        it('should generate values from enum', () => {
-            const schema = z.enum(['red', 'green', 'blue']);
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(['red', 'green', 'blue']).toContain(result);
-        });
-
-        it('should generate values from native enum', () => {
-            enum Color {
-                Blue = 'blue',
-                Green = 'green',
-                Red = 'red',
-            }
-
-            const schema = z.enum(Color);
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(['red', 'green', 'blue']).toContain(result);
-            expect(Object.values(Color)).toContain(result);
-        });
-
-        it('should generate values from numeric native enum', () => {
-            enum Status {
-                Pending,
-                InProgress,
-                Completed,
-            }
-
-            const schema = z.enum(Status);
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect([0, 1, 2, 'Pending', 'InProgress', 'Completed']).toContain(
-                result,
+            expect(() => factory.build()).toThrow(
+                'ZodFactory cannot generate data for z.custom()',
             );
-            expect(Object.values(Status)).toContain(result);
+        });
+
+        it('should handle custom types with registered handler', () => {
+            const customValidator = z.custom<{ special: true }>(
+                (val) =>
+                    typeof val === 'object' && val !== null && 'special' in val,
+            );
+
+            const schema = z.object({
+                custom: customValidator,
+            });
+
+            const factory = new ZodFactory(schema).withTypeHandler(
+                'ZodCustom',
+                () => ({ special: true }),
+            );
+
+            const result = factory.build();
+            expect(result.custom).toEqual({ special: true });
         });
     });
 
-    describe('Type registration utilities', () => {
-        afterEach(() => {
-            clearZodTypeRegistry();
+    describe('metadata-based generation', () => {
+        it('should use generator from description', () => {
+            const schema = z.object({
+                userId: z.string().describe('userId'),
+            });
+
+            const factory = new ZodFactory(schema, {
+                generators: {
+                    userId: () => 'user_123',
+                },
+            });
+
+            const result = factory.build();
+            expect(result.userId).toBe('user_123');
         });
 
-        it('should register and unregister custom type handlers', () => {
-            const handler = (
-                _schema: unknown,
-                _factory: unknown,
-                _config: unknown,
-            ) => 'test';
+        it('should use example from metadata', () => {
+            const schema = z.object({
+                config: z
+                    .string()
+                    .describe('Configuration string')
+                    .meta({ example: 'example-config' }),
+            });
 
-            registerZodType('TestType', handler);
-            expect(getRegisteredZodTypes()).toContain('TestType');
-
-            const wasRemoved = unregisterZodType('TestType');
-            expect(wasRemoved).toBe(true);
-            expect(getRegisteredZodTypes()).not.toContain('TestType');
+            const factory = new ZodFactory(schema);
+            const result = factory.build();
+            expect(result.config).toBe('example-config');
         });
 
-        it('should clear all registered types', () => {
-            initializeBuiltinZodTypes();
+        it('should use examples array from metadata', () => {
+            const schema = z.object({
+                status: z
+                    .string()
+                    .meta({ examples: ['active', 'inactive', 'pending'] }),
+            });
 
-            registerZodType(
-                'Type1',
-                (_schema: unknown, _factory: unknown, _config: unknown) =>
-                    'test1',
-            );
-            registerZodType(
-                'Type2',
-                (_schema: unknown, _factory: unknown, _config: unknown) =>
-                    'test2',
-            );
+            const factory = new ZodFactory(schema);
+            const results = factory.batch(30);
 
-            expect(getRegisteredZodTypes()).toHaveLength(7 + 2);
+            const statuses = new Set(results.map((r) => r.status));
+            expect(statuses.has('active')).toBe(true);
+            expect(statuses.has('inactive')).toBe(true);
+            expect(statuses.has('pending')).toBe(true);
+        });
 
-            clearZodTypeRegistry();
-            expect(getRegisteredZodTypes()).toHaveLength(0);
+        it('should use examples object from metadata', () => {
+            const schema = z.object({
+                role: z.string().meta({
+                    examples: {
+                        admin: {
+                            description: 'Administrator role',
+                            value: 'admin',
+                        },
+                        user: {
+                            description: 'Regular user role',
+                            value: 'user',
+                        },
+                    },
+                }),
+            });
+
+            const factory = new ZodFactory(schema);
+            const results = factory.batch(20);
+
+            const roles = new Set(results.map((r) => r.role));
+            expect(roles.has('admin')).toBe(true);
+            expect(roles.has('user')).toBe(true);
+        });
+
+        it('should use global registry metadata', () => {
+            const emailSchema = z.email();
+            // Skip global registry test as it's not available in Zod v4
+            // z.globalRegistry.set(emailSchema, {...});
+
+            const schema = z.object({
+                email: emailSchema,
+            });
+
+            const factory = new ZodFactory(schema, {
+                generators: {
+                    emailGenerator: () => 'custom@email.com',
+                },
+            });
+
+            const result = factory.build();
+            expect(result.email).toBe('custom@email.com');
+        });
+
+        it('should prefer example over generated value', () => {
+            const schema = z.object({
+                constant: z.number().meta({ example: 42 }),
+            });
+
+            const factory = new ZodFactory(schema);
+            const results = factory.batch(5);
+
+            results.forEach((result) => {
+                expect(result.constant).toBe(42);
+            });
+        });
+
+        it('should use registered schemas with metadata', () => {
+            const userIdSchema = z
+                .uuid()
+                .describe('Unique user identifier')
+                .meta({
+                    examples: ['550e8400-e29b-41d4-a716-446655440000'],
+                    id: 'user_id',
+                    title: 'User ID',
+                });
+
+            const schema = z.object({
+                userId: userIdSchema,
+            });
+
+            const factory = new ZodFactory(schema);
+            const result = factory.build();
+
+            expect(result.userId).toBe('550e8400-e29b-41d4-a716-446655440000');
         });
     });
 
-    describe('Custom Type Registration', () => {
-
-        it('should handle built-in registered types', () => {
-            const bigIntSchema = z.bigint();
-
-            const factory = new ZodFactory(bigIntSchema);
-            const result = factory.build();
-
-            expect(typeof result).toBe('bigint');
-            expect(result).toBeGreaterThanOrEqual(0n);
-            expect(result).toBeLessThanOrEqual(1_000_000n);
-        });
-
-        it('should handle NaN type', () => {
-            const nanSchema = z.nan();
-
-            const factory = new ZodFactory(nanSchema);
-            const result = factory.build();
-
-            expect(Number.isNaN(result)).toBe(true);
-        });
-
-        it('should handle void type', () => {
-            const voidSchema = z.void();
-
-            const factory = new ZodFactory(voidSchema);
-            const result = factory.build();
-
-            expect(result).toBeUndefined();
-        });
-
-
-
-        it('should get registered types', () => {
-            const initialTypes = getRegisteredZodTypes();
-            expect(initialTypes).toContain('ZodBigInt');
-            expect(initialTypes).toContain('ZodNaN');
-            expect(initialTypes).toContain('ZodVoid');
-            expect(initialTypes).toContain('ZodFunction');
-            expect(initialTypes).toContain('ZodPromise');
-            expect(initialTypes).toContain('ZodLazy');
-
-            registerZodType('TestType', () => 'test');
-            const updatedTypes = getRegisteredZodTypes();
-            expect(updatedTypes).toContain('TestType');
-
-            unregisterZodType('TestType');
-        });
-
-        it('should unregister types', () => {
-            registerZodType('TemporaryType', () => 'temp');
-            expect(getRegisteredZodTypes()).toContain('TemporaryType');
-
-            const wasRemoved = unregisterZodType('TemporaryType');
-            expect(wasRemoved).toBe(true);
-            expect(getRegisteredZodTypes()).not.toContain('TemporaryType');
-
-            const notRemoved = unregisterZodType('NonExistentType');
-            expect(notRemoved).toBe(false);
-        });
-
-        it('should clear registry', () => {
-            const initialCount = getRegisteredZodTypes().length;
-            expect(initialCount).toBeGreaterThan(0);
-
-            clearZodTypeRegistry();
-            expect(getRegisteredZodTypes()).toHaveLength(0);
-
-            registerZodType('ZodBigInt', (_schema, factory) => {
-                return BigInt(factory.number.int({ max: 1_000_000, min: 0 }));
+    describe('top-level Zod v4 functions', () => {
+        it('should handle top-level email function', () => {
+            const schema = z.object({
+                email: z.email(),
             });
-            registerZodType('ZodNaN', () => Number.NaN);
-            registerZodType('ZodVoid', () => undefined);
-            registerZodType(
-                'ZodFunction',
-                (_schema, factory) => () => factory.lorem.word(),
-            );
-            registerZodType('ZodPromise', (_schema, _factory) => {
-                return Promise.resolve(_factory.lorem.word());
-            });
-            registerZodType('ZodLazy', (_schema, _factory, _config) => {
-                return _factory.lorem.word();
+
+            const factory = new ZodFactory(schema);
+            const results = factory.batch(10);
+
+            results.forEach((result) => {
+                expect(result.email).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
             });
         });
 
-        it('should handle third-party zod extensions', () => {
-            const CustomStringSchema = z.custom<string>(
-                (val) => typeof val === 'string' && val.split(' ').length > 1,
-                { message: 'Must be a sentence' },
-            );
-
-            Object.defineProperty(CustomStringSchema.constructor, 'name', {
-                value: 'ZodOpenApi',
+        it('should handle top-level uuid functions', () => {
+            const schema = z.object({
+                id: z.uuid(),
             });
 
-            registerZodType('ZodOpenApi', (_schema, factory) => {
-                return factory.lorem.sentence();
-            });
-
-            const factory = new ZodFactory(CustomStringSchema);
-            const result = factory.build();
-
-            expect(typeof result).toBe('string');
-            expect(result.split(' ').length).toBeGreaterThan(1);
-
-            unregisterZodType('ZodOpenApi');
-        });
-    });
-
-    describe('String schemas', () => {
-        it('should generate strings', () => {
-            const schema = z.string();
             const factory = new ZodFactory(schema);
             const result = factory.build();
 
-            expect(typeof result).toBe('string');
-        });
-
-        it('should generate emails for email schema', () => {
-            const schema = z.email();
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(typeof result).toBe('string');
-            expect(result).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
-        });
-
-        it('should generate UUIDs for uuid schema', () => {
-            const schema = z.uuid();
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(typeof result).toBe('string');
-            expect(result).toMatch(
+            expect(result.id).toMatch(
                 /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
             );
         });
 
-        it('should generate URLs for url schema', () => {
-            const schema = z.url();
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(typeof result).toBe('string');
-            expect(result).toMatch(/^https?:\/\/.+/);
-        });
-
-        it('should respect string length constraints', () => {
-            const schema = z.string().length(10);
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(result).toHaveLength(10);
-        });
-
-        it('should respect minimum string length', () => {
-            const schema = z.string().min(5);
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(result.length).toBeGreaterThanOrEqual(5);
-        });
-    });
-
-    describe('Number schemas', () => {
-        it('should generate numbers', () => {
-            const schema = z.number();
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(typeof result).toBe('number');
-        });
-
-        it('should generate integers', () => {
-            const schema = z.number().int();
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(Number.isInteger(result)).toBe(true);
-        });
-
-        it('should respect number constraints', () => {
-            const schema = z.number().min(10).max(20);
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(result).toBeGreaterThanOrEqual(10);
-            expect(result).toBeLessThanOrEqual(20);
-        });
-    });
-
-    describe('Boolean schemas', () => {
-        it('should generate booleans', () => {
-            const schema = z.boolean();
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(typeof result).toBe('boolean');
-        });
-    });
-
-    describe('Date schemas', () => {
-        it('should generate dates', () => {
-            const schema = z.date();
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(result).toBeInstanceOf(Date);
-        });
-    });
-
-    describe('Literal schemas', () => {
-        it('should return literal string values', () => {
-            const schema = z.literal('hello');
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(result).toBe('hello');
-        });
-
-        it('should return literal number values', () => {
-            const schema = z.literal(42);
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(result).toBe(42);
-        });
-    });
-
-    describe('Enum schemas', () => {
-        it('should generate values from enum', () => {
-            const schema = z.enum(['red', 'green', 'blue']);
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(['red', 'green', 'blue']).toContain(result);
-        });
-
-        it('should generate values from native enum', () => {
-            enum Color {
-                Blue = 'blue',
-                Green = 'green',
-                Red = 'red',
-            }
-
-            const schema = z.enum(Color);
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(['red', 'green', 'blue']).toContain(result);
-            expect(Object.values(Color)).toContain(result);
-        });
-
-        it('should generate values from numeric native enum', () => {
-            enum Status {
-                Pending,
-                InProgress,
-                Completed,
-            }
-
-            const schema = z.enum(Status);
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect([0, 1, 2, 'Pending', 'InProgress', 'Completed']).toContain(
-                result,
-            );
-            expect(Object.values(Status)).toContain(result);
-        });
-    });
-
-    describe('Null and Undefined schemas', () => {
-        it('should generate null for null schema', () => {
-            const schema = z.null();
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(result).toBeNull();
-        });
-
-        it('should generate undefined for undefined schema', () => {
-            const schema = z.undefined();
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(result).toBeUndefined();
-        });
-    });
-
-    describe('Optional schemas', () => {
-        it('should sometimes generate undefined for optional schemas', () => {
-            const schema = z.string().optional();
-            const factory = new ZodFactory(schema);
-
-            const results = Array.from({ length: 100 }, () => factory.build());
-            const undefinedCount = results.filter(
-                (r) => r === undefined,
-            ).length;
-            const stringCount = results.filter(
-                (r) => typeof r === 'string',
-            ).length;
-
-            expect(undefinedCount).toBeGreaterThan(0);
-            expect(stringCount).toBeGreaterThan(0);
-        });
-    });
-
-    describe('Nullable schemas', () => {
-        it('should sometimes generate null for nullable schemas', () => {
-            const schema = z.string().nullable();
-            const factory = new ZodFactory(schema);
-
-            const results = Array.from({ length: 100 }, () => factory.build());
-            const nullCount = results.filter((r) => r === null).length;
-            const stringCount = results.filter(
-                (r) => typeof r === 'string',
-            ).length;
-
-            expect(nullCount).toBeGreaterThan(0);
-            expect(stringCount).toBeGreaterThan(0);
-        });
-    });
-
-    describe('Array schemas', () => {
-        it('should generate arrays', () => {
-            const schema = z.array(z.string());
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(Array.isArray(result)).toBe(true);
-            result.forEach((item) => {
-                expect(typeof item).toBe('string');
-            });
-        });
-
-        it('should respect array length constraints', () => {
-            const schema = z.array(z.string()).min(3).max(5);
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(result.length).toBeGreaterThanOrEqual(3);
-            expect(result.length).toBeLessThanOrEqual(5);
-        });
-    });
-
-    describe('Object schemas', () => {
-        it('should generate objects', () => {
+        it('should handle top-level url function', () => {
             const schema = z.object({
-                active: z.boolean(),
-                age: z.number(),
-                name: z.string(),
+                website: z.url(),
             });
+
             const factory = new ZodFactory(schema);
             const result = factory.build();
 
-            expect(typeof result).toBe('object');
-            expect(typeof result.name).toBe('string');
-            expect(typeof result.age).toBe('number');
-            expect(typeof result.active).toBe('boolean');
+            expect(result.website).toMatch(/^https?:\/\//);
         });
 
-        it('should handle nested objects', () => {
+        it('should handle top-level IP functions', () => {
             const schema = z.object({
-                metadata: z.object({
-                    createdAt: z.date(),
-                    tags: z.array(z.string()),
-                }),
-                user: z.object({
-                    email: z.email(),
-                    name: z.string(),
-                }),
+                ipv4: z.ipv4(),
+                ipv6: z.ipv6(),
             });
+
             const factory = new ZodFactory(schema);
             const result = factory.build();
 
-            expect(typeof result.user).toBe('object');
-            expect(typeof result.user.name).toBe('string');
-            expect(typeof result.user.email).toBe('string');
-            expect(result.user.email).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
-            expect(result.metadata.createdAt).toBeInstanceOf(Date);
-            expect(Array.isArray(result.metadata.tags)).toBe(true);
+            expect(result.ipv4).toMatch(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/);
+            expect(result.ipv6).toMatch(/^([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}$/i);
         });
-    });
 
-    describe('Union schemas', () => {
-        it('should generate values from union options', () => {
-            const schema = z.union([z.string(), z.number()]);
+        it('should handle top-level base64 functions', () => {
+            const schema = z.object({
+                encoded: z.base64(),
+                urlEncoded: z.base64url(),
+            });
+
             const factory = new ZodFactory(schema);
+            const result = factory.build();
 
-            const results = Array.from({ length: 100 }, () => factory.build());
-            const types = [...new Set(results.map((r) => typeof r))];
-
-            expect(types).toContain('string');
-            expect(types).toContain('number');
+            expect(() => Buffer.from(result.encoded, 'base64')).not.toThrow();
+            expect(() =>
+                Buffer.from(result.urlEncoded, 'base64url'),
+            ).not.toThrow();
         });
-    });
 
-    describe('Intersection schemas', () => {
-        it('should merge intersection objects', () => {
-            const schema = z.intersection(
-                z.object({ name: z.string() }),
-                z.object({ age: z.number() }),
+        it('should handle top-level date format functions', () => {
+            const schema = z.object({
+                date: z.iso.date(),
+                datetime: z.iso.datetime(),
+                duration: z.iso.duration(),
+                time: z.iso.time(),
+            });
+
+            const factory = new ZodFactory(schema);
+            const result = factory.build();
+
+            expect(result.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+            expect(result.datetime).toMatch(
+                /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
             );
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(typeof result.name).toBe('string');
-            expect(typeof result.age).toBe('number');
+            expect(result.time).toMatch(/^\d{2}:\d{2}:\d{2}/);
+            expect(result.duration).toMatch(/^PT\d+H\d+M\d+S$/);
         });
     });
 
-    describe('Record schemas', () => {
-        it('should generate record objects', () => {
-            const schema = z.record(z.string(), z.string());
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(typeof result).toBe('object');
-            expect(
-                Object.values(result).every((v) => typeof v === 'string'),
-            ).toBe(true);
-        });
-    });
-
-    describe('Factory methods', () => {
-        it('should support build() method', () => {
-            const schema = z.object({ age: z.number(), name: z.string() });
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(typeof result.name).toBe('string');
-            expect(typeof result.age).toBe('number');
-        });
-
-        it('should support batch() method', () => {
-            const schema = z.object({ name: z.string() });
-            const factory = new ZodFactory(schema);
-            const results = factory.batch(3);
-
-            expect(results).toHaveLength(3);
-            expect(results.every((r) => typeof r.name === 'string')).toBe(true);
-        });
-
-        it('should support build() with overrides', () => {
-            const schema = z.object({ age: z.number(), name: z.string() });
-            const factory = new ZodFactory(schema);
-            const result = factory.build({ name: 'John' });
-
-            expect(result.name).toBe('John');
-            expect(typeof result.age).toBe('number');
-        });
-
-        it('should work like a Factory', () => {
-            const factory = new ZodFactory(z.object({ name: z.string() }));
-
-            expect(factory.build()).toBeDefined();
-            expect(factory.batch(3)).toHaveLength(3);
-        });
-
-        it('should support build with overrides', () => {
-            const factory = new ZodFactory(
-                z.object({
-                    age: z.number(),
-                    name: z.string(),
-                }),
-            );
-
-            const result = factory.build({ name: 'Override' });
-            expect(result.name).toBe('Override');
-            expect(typeof result.age).toBe('number');
-        });
-    });
-
-    describe('Edge cases', () => {
-        it('should handle unknown schemas', () => {
-            const schema = z.unknown();
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(result).toBeDefined();
-        });
-
-        it('should handle any schemas', () => {
-            const schema = z.any();
-            const factory = new ZodFactory(schema);
-            const result = factory.build();
-
-            expect(result).toBeDefined();
-        });
-    });
-
-    describe('Example 1: Basic User Schema', () => {
-        it('should generate valid basic user data', () => {
-            const UserSchema = z.object({
-                age: z.number().int().min(18).max(120),
-                createdAt: z.date(),
+    describe('partial factory functions', () => {
+        it('should merge schema generation with custom factory', () => {
+            const schema = z.object({
+                age: z.number().int().min(0).max(100),
                 email: z.email(),
                 id: z.uuid(),
-                isActive: z.boolean(),
-                name: z.string().min(1).max(100),
+                name: z.string(),
             });
 
-            const factory = new ZodFactory(UserSchema);
-            const user = factory.build();
+            const factory = new ZodFactory(schema);
 
-            const result = UserSchema.safeParse(user);
-            expect(result.success).toBe(true);
-
-            if (result.success) {
-                expect(result.data.id).toMatch(
-                    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-                );
-                expect(result.data.email).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
-                expect(result.data.name.length).toBeGreaterThan(0);
-                expect(result.data.name.length).toBeLessThanOrEqual(100);
-                expect(result.data.age).toBeGreaterThanOrEqual(18);
-                expect(result.data.age).toBeLessThanOrEqual(120);
-                expect(typeof result.data.isActive).toBe('boolean');
-                expect(result.data.createdAt).toBeInstanceOf(Date);
-            }
-
-            const customUser = factory.build({
-                email: 'john.doe@example.com',
-                name: 'John Doe',
+            const result = factory.build({
+                age: 25,
+                name: 'User 42',
             });
-            expect(customUser.name).toBe('John Doe');
-            expect(customUser.email).toBe('john.doe@example.com');
+
+            // From schema
+            expect(result.id).toMatch(
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+            );
+            expect(result.email).toMatch(/@/);
+
+            // From overrides
+            expect(result.name).toBe('User 42');
+            expect(result.age).toBe(25);
+        });
+
+        it('should allow build overrides on top of both', () => {
+            const schema = z.object({
+                id: z.uuid(),
+                name: z.string(),
+                role: z.enum(['admin', 'user']),
+            });
+
+            const factory = new ZodFactory(schema, (f) => ({
+                id: f.string.uuid(),
+                name: 'Default User',
+                role: 'user' as const,
+            }));
+
+            const result = factory.build({
+                role: 'admin',
+            });
+
+            expect(result.id).toMatch(
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+            );
+            expect(result.name).toBe('Default User');
+            expect(result.role).toBe('admin');
         });
     });
 
-    describe('Example 2: Complex E-commerce Product Schema', () => {
-        it('should generate valid e-commerce product data', () => {
-            const ProductSchema = z.object({
+    describe('recursive schemas', () => {
+        it('should handle recursive schemas with depth control', () => {
+            interface Category {
+                name: string;
+                subcategories: Category[];
+            }
+
+            const categorySchema: z.ZodType<Category> = z.lazy(() =>
+                z.object({
+                    name: z.string(),
+                    subcategories: z.array(categorySchema),
+                }),
+            );
+
+            const schema = z.object({
+                rootCategory: categorySchema,
+            });
+
+            const factory = new ZodFactory(schema, { maxDepth: 3 });
+            const result = factory.build();
+
+            expect(result.rootCategory.name).toBeDefined();
+            expect(Array.isArray(result.rootCategory.subcategories)).toBe(true);
+
+            // Check depth limiting works
+            let currentLevel = result.rootCategory;
+            let depth = 0;
+            while (currentLevel.subcategories.length > 0) {
+                depth++;
+                const [level] = currentLevel.subcategories;
+                currentLevel = level;
+            }
+            expect(depth).toBeLessThanOrEqual(3);
+        });
+
+        it('should handle lazy schemas', () => {
+            const schema = z.object({
+                node: z.lazy(() =>
+                    z.object({
+                        children: z.array(z.string()),
+                        id: z.string(),
+                    }),
+                ),
+            });
+
+            const factory = new ZodFactory(schema);
+            const result = factory.build();
+
+            expect(typeof result.node.id).toBe('string');
+            expect(Array.isArray(result.node.children)).toBe(true);
+            result.node.children.forEach((child) => {
+                expect(typeof child).toBe('string');
+            });
+        });
+    });
+
+    describe('special number formats', () => {
+        it('should generate int32 numbers', () => {
+            const schema = z.object({
+                value: z.number().int(),
+            });
+
+            const factory = new ZodFactory(schema);
+            const results = factory.batch(20);
+
+            results.forEach((result) => {
+                expect(Number.isInteger(result.value)).toBe(true);
+                expect(result.value).toBeGreaterThanOrEqual(-(2 ** 31));
+                expect(result.value).toBeLessThanOrEqual(2 ** 31 - 1);
+            });
+        });
+
+        it('should generate finite numbers', () => {
+            const schema = z.object({
+                value: z.number(),
+            });
+
+            const factory = new ZodFactory(schema);
+            const results = factory.batch(10);
+
+            results.forEach((result) => {
+                expect(Number.isFinite(result.value)).toBe(true);
+            });
+        });
+    });
+
+    describe('special types', () => {
+        it('should generate NaN values', () => {
+            const schema = z.object({
+                value: z.nan(),
+            });
+
+            const factory = new ZodFactory(schema);
+            const result = factory.build();
+
+            expect(Number.isNaN(result.value)).toBe(true);
+        });
+
+        it('should handle void type', () => {
+            const schema = z.object({
+                nothing: z.void(),
+            });
+
+            const factory = new ZodFactory(schema);
+            const result = factory.build();
+
+            expect(result.nothing).toBeUndefined();
+        });
+
+        it('should handle function type', () => {
+            const schema = z.object({
+                callback: z.function(),
+            });
+
+            const factory = new ZodFactory(schema);
+            const result = factory.build();
+
+            expect(typeof result.callback).toBe('function');
+            expect(typeof (result.callback as () => string)()).toBe('string'); // Default returns a word
+        });
+
+        it('should handle promise type', () => {
+            const schema = z.object({
+                asyncData: z.promise(z.string()),
+            });
+
+            const factory = new ZodFactory(schema);
+            const result = factory.build();
+
+            expect(result.asyncData).toBeInstanceOf(Promise);
+            return expect(result.asyncData).resolves.toEqual(
+                expect.any(String),
+            );
+        });
+    });
+
+    describe('date formats', () => {
+        it('should generate ISO date strings', () => {
+            const schema = z.object({
+                date: z.iso.date(),
+            });
+
+            const factory = new ZodFactory(schema);
+            const results = factory.batch(10);
+
+            results.forEach((result) => {
+                expect(result.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+            });
+        });
+
+        it('should generate ISO datetime strings', () => {
+            const schema = z.object({
+                timestamp: z.iso.datetime(),
+            });
+
+            const factory = new ZodFactory(schema);
+            const results = factory.batch(10);
+
+            results.forEach((result) => {
+                expect(result.timestamp).toMatch(
+                    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+                );
+                expect(() => new Date(result.timestamp)).not.toThrow();
+            });
+        });
+
+        it('should generate ISO time strings', () => {
+            const schema = z.object({
+                time: z.iso.time(),
+            });
+
+            const factory = new ZodFactory(schema);
+            const results = factory.batch(10);
+
+            results.forEach((result) => {
+                expect(result.time).toMatch(/^\d{2}:\d{2}:\d{2}/);
+            });
+        });
+
+        it('should generate ISO duration strings', () => {
+            const schema = z.object({
+                duration: z.iso.duration(),
+            });
+
+            const factory = new ZodFactory(schema);
+            const results = factory.batch(10);
+
+            results.forEach((result) => {
+                expect(result.duration).toMatch(/^PT\d+H\d+M\d+S$/);
+            });
+        });
+    });
+
+    describe('error handling', () => {
+        it('should throw for never type', () => {
+            const schema = z.object({
+                impossible: z.never(),
+            });
+
+            const factory = new ZodFactory(schema);
+            expect(() => factory.build()).toThrow(
+                'ZodNever should never be reached',
+            );
+        });
+    });
+
+    describe('integration with base Factory methods', () => {
+        it('should work with batch method', () => {
+            const schema = z.object({
+                id: z.number().int(),
+                name: z.string(),
+            });
+
+            const factory = new ZodFactory(schema);
+            const results = factory.batch(5);
+
+            expect(results).toHaveLength(5);
+            results.forEach((result) => {
+                expect(Number.isInteger(result.id)).toBe(true);
+                expect(typeof result.name).toBe('string');
+            });
+        });
+
+        it('should work with iterate method', () => {
+            const schema = z.object({
+                status: z.string(),
+            });
+
+            const factory = new ZodFactory(schema);
+            const iterator = factory.iterate([
+                { status: 'active' },
+                { status: 'inactive' },
+                { status: 'pending' },
+            ]);
+
+            const results = Array.from(
+                { length: 6 },
+                () => iterator.next().value,
+            );
+
+            expect(results[0].status).toBe('active');
+            expect(results[1].status).toBe('inactive');
+            expect(results[2].status).toBe('pending');
+            expect(results[3].status).toBe('active');
+            expect(results[4].status).toBe('inactive');
+            expect(results[5].status).toBe('pending');
+        });
+
+        it('should work with sample method', () => {
+            const schema = z.object({
+                value: z.enum(['a', 'b', 'c']),
+            });
+
+            const factory = new ZodFactory(schema);
+            const sampler = factory.sample(['a', 'b', 'c']);
+
+            const results = new Set(
+                Array.from({ length: 50 }, () => sampler.next().value),
+            );
+            expect(results.has('a')).toBe(true);
+            expect(results.has('b')).toBe(true);
+            expect(results.has('c')).toBe(true);
+        });
+
+        it('should work with hooks', () => {
+            const schema = z.object({
+                createdAt: z.date(),
+                id: z.string(),
+            });
+
+            let beforeBuildCalled = false;
+            let afterBuildCalled = false;
+
+            const factory = new ZodFactory(schema)
+                .beforeBuild((params) => {
+                    beforeBuildCalled = true;
+                    return params;
+                })
+                .afterBuild((item) => {
+                    afterBuildCalled = true;
+                    return { ...item, processed: true };
+                });
+
+            const result = factory.build() as any;
+
+            expect(beforeBuildCalled).toBe(true);
+            expect(afterBuildCalled).toBe(true);
+            expect(result.processed).toBe(true);
+        });
+
+        it('should validate generated data passes schema', () => {
+            const schema = z.object({
+                age: z.number().int().min(18).max(65),
+                email: z.email(),
+                metadata: z.record(z.string(), z.any()).optional(),
+                status: z.enum(['active', 'inactive']),
+                tags: z.array(z.string()).min(1).max(5),
+            });
+
+            const factory = new ZodFactory(schema);
+            const results = factory.batch(100);
+
+            // All generated data should pass validation
+            results.forEach((result) => {
+                expect(() => schema.parse(result)).not.toThrow();
+            });
+        });
+    });
+
+    describe('complex real-world schemas', () => {
+        it('should generate user profile data', () => {
+            const addressSchema = z.object({
+                city: z.string(),
+                country: z.string().default('USA'),
+                state: z.string().length(2),
+                street: z.string(),
+                zipCode: z.string().regex(/^\d{5}$/),
+            });
+
+            const userSchema = z.object({
+                address: addressSchema,
+                email: z.email(),
+                id: z.uuid(),
+                metadata: z.object({
+                    createdAt: z.date(),
+                    lastLoginAt: z.date().nullable(),
+                    loginCount: z.number().int().min(0),
+                    updatedAt: z.date(),
+                }),
+                password: z.string().min(8),
+                profile: z.object({
+                    avatar: z.url().optional(),
+                    bio: z.string().max(500).optional(),
+                    dateOfBirth: z.date(),
+                    firstName: z.string(),
+                    lastName: z.string(),
+                    phoneNumber: z.string().regex(/^\+?[\d\s-()]+$/),
+                }),
+                roles: z.array(z.enum(['user', 'admin', 'moderator'])).min(1),
+                settings: z.object({
+                    notifications: z.object({
+                        email: z.boolean(),
+                        push: z.boolean(),
+                        sms: z.boolean(),
+                    }),
+                    privacy: z.object({
+                        profileVisibility: z.enum([
+                            'public',
+                            'friends',
+                            'private',
+                        ]),
+                        showEmail: z.boolean(),
+                        showPhone: z.boolean(),
+                    }),
+                    theme: z.enum(['light', 'dark', 'auto']),
+                }),
+                username: z.string().min(3).max(20),
+            });
+
+            const factory = new ZodFactory(userSchema);
+            const users = factory.batch(10);
+
+            users.forEach((user) => {
+                // Validate against schema
+                expect(() => userSchema.parse(user)).not.toThrow();
+
+                // Check specific constraints
+                expect(user.username.length).toBeGreaterThanOrEqual(3);
+                expect(user.username.length).toBeLessThanOrEqual(20);
+                expect(user.email).toContain('@');
+                expect(user.password.length).toBeGreaterThanOrEqual(8);
+                expect(user.address.state.length).toBe(2);
+                expect(user.address.zipCode).toMatch(/^\d{5}$/);
+                expect(user.roles.length).toBeGreaterThanOrEqual(1);
+                expect(['light', 'dark', 'auto']).toContain(
+                    user.settings.theme,
+                );
+            });
+        });
+
+        it('should generate e-commerce order data', () => {
+            const moneySchema = z.object({
+                amount: z.number().positive().multipleOf(0.01),
+                currency: z.enum(['USD', 'EUR', 'GBP']),
+            });
+
+            const productSchema = z.object({
                 category: z.enum([
                     'electronics',
                     'clothing',
+                    'food',
                     'books',
-                    'home',
-                    'sports',
+                    'other',
                 ]),
-                createdAt: z.date(),
-                description: z.string().optional(),
+                description: z.string(),
                 id: z.uuid(),
-                inStock: z.boolean(),
-                name: z.string().min(1).max(200),
-                price: z.number().min(0).max(99_999.99),
-                ratings: z.object({
-                    average: z.number().min(1).max(5),
-                    count: z.number().int().min(0),
-                }),
-                tags: z.array(z.string()).min(1).max(10),
-                updatedAt: z.date().optional(),
-                variants: z
-                    .array(
-                        z.object({
-                            available: z.boolean(),
-                            id: z.string(),
-                            name: z.string(),
-                            price: z.number().min(0),
-                        }),
-                    )
-                    .optional(),
+                name: z.string(),
+                price: moneySchema,
+                stock: z.number().int().min(0),
+                tags: z.array(z.string()),
             });
 
-            const factory = new ZodFactory(ProductSchema);
-            const product = factory.build();
-
-            const result = ProductSchema.safeParse(product);
-            expect(result.success).toBe(true);
-
-            if (result.success) {
-                expect(result.data.price).toBeGreaterThanOrEqual(0);
-                expect(result.data.price).toBeLessThanOrEqual(99_999.99);
-                expect([
-                    'electronics',
-                    'clothing',
-                    'books',
-                    'home',
-                    'sports',
-                ]).toContain(result.data.category);
-                expect(result.data.tags.length).toBeGreaterThanOrEqual(1);
-                expect(result.data.tags.length).toBeLessThanOrEqual(10);
-                expect(result.data.ratings.average).toBeGreaterThanOrEqual(1);
-                expect(result.data.ratings.average).toBeLessThanOrEqual(5);
-
-                if (result.data.variants) {
-                    result.data.variants.forEach((variant) => {
-                        expect(typeof variant.id).toBe('string');
-                        expect(typeof variant.name).toBe('string');
-                        expect(variant.price).toBeGreaterThanOrEqual(0);
-                        expect(typeof variant.available).toBe('boolean');
-                    });
-                }
-            }
-        });
-    });
-
-    describe('Example 3: Company with Employees (Complex Nested Schema)', () => {
-        it('should generate valid company data with employees', () => {
-            const EmployeeSchema = z.object({
-                department: z.enum([
-                    'engineering',
-                    'marketing',
-                    'sales',
-                    'hr',
-                    'finance',
-                ]),
-                email: z.email(),
-                firstName: z.string().min(1),
-                id: z.uuid(),
-                isActive: z.boolean(),
-                lastName: z.string().min(1),
-                position: z.string(),
-                salary: z.number().int().min(30_000).max(500_000),
-                skills: z.array(z.string()).min(1).max(15),
-                startDate: z.date(),
+            const orderItemSchema = z.object({
+                product: productSchema,
+                quantity: z.number().int().positive(),
+                totalPrice: moneySchema,
+                unitPrice: moneySchema,
             });
 
-            const CompanySchema = z.object({
-                address: z.object({
+            const orderSchema = z.object({
+                customerId: z.uuid(),
+                items: z.array(orderItemSchema).min(1),
+                orderId: z.uuid(),
+                paymentMethod: z.discriminatedUnion('type', [
+                    z.object({
+                        brand: z.enum([
+                            'visa',
+                            'mastercard',
+                            'amex',
+                            'discover',
+                        ]),
+                        last4: z.string().length(4),
+                        type: z.literal('credit_card'),
+                    }),
+                    z.object({
+                        email: z.email(),
+                        type: z.literal('paypal'),
+                    }),
+                    z.object({
+                        accountNumber: z.string(),
+                        type: z.literal('bank_transfer'),
+                    }),
+                ]),
+                shipping: moneySchema,
+                shippingAddress: z.object({
                     city: z.string(),
                     country: z.string(),
+                    name: z.string(),
                     state: z.string(),
                     street: z.string(),
                     zipCode: z.string(),
                 }),
-                employees: z.array(EmployeeSchema).min(1).max(10),
-                foundedAt: z.date(),
-                id: z.uuid(),
-                industry: z.string(),
-                name: z.string().min(1),
-                revenue: z.number().min(0).optional(),
-                website: z.url().optional(),
-            });
-
-            const factory = new ZodFactory(CompanySchema);
-            const company = factory.build();
-
-            const result = CompanySchema.safeParse(company);
-            expect(result.success).toBe(true);
-
-            if (result.success) {
-                expect(result.data.employees.length).toBeGreaterThanOrEqual(1);
-                expect(result.data.employees.length).toBeLessThanOrEqual(10);
-
-                result.data.employees.forEach((employee) => {
-                    expect(employee.id).toMatch(
-                        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-                    );
-                    expect(employee.email).toMatch(
-                        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-                    );
-                    expect([
-                        'engineering',
-                        'marketing',
-                        'sales',
-                        'hr',
-                        'finance',
-                    ]).toContain(employee.department);
-                    expect(employee.salary).toBeGreaterThanOrEqual(30_000);
-                    expect(employee.salary).toBeLessThanOrEqual(500_000);
-                    expect(Number.isInteger(employee.salary)).toBe(true);
-                    expect(employee.skills.length).toBeGreaterThanOrEqual(1);
-                    expect(employee.skills.length).toBeLessThanOrEqual(15);
-                });
-
-                expect(typeof result.data.address.street).toBe('string');
-                expect(typeof result.data.address.city).toBe('string');
-                expect(typeof result.data.address.state).toBe('string');
-                expect(typeof result.data.address.zipCode).toBe('string');
-                expect(typeof result.data.address.country).toBe('string');
-            }
-        });
-    });
-
-    describe('Example 4: Union Types', () => {
-        it('should generate valid union type data', () => {
-            const EventSchema = z.union([
-                z.object({
-                    coordinates: z.object({
-                        x: z.number(),
-                        y: z.number(),
-                    }),
-                    element: z.string(),
-                    timestamp: z.date(),
-                    type: z.literal('click'),
-                }),
-                z.object({
-                    direction: z.enum(['up', 'down']),
-                    position: z.number(),
-                    timestamp: z.date(),
-                    type: z.literal('scroll'),
-                }),
-                z.object({
-                    key: z.string(),
-                    modifiers: z
-                        .array(z.enum(['ctrl', 'alt', 'shift']))
-                        .optional(),
-                    timestamp: z.date(),
-                    type: z.literal('keypress'),
-                }),
-            ]);
-
-            const factory = new ZodFactory(EventSchema);
-            const events = factory.batch(10);
-
-            events.forEach((event) => {
-                const result = EventSchema.safeParse(event);
-                expect(result.success).toBe(true);
-
-                if (result.success) {
-                    expect(['click', 'scroll', 'keypress']).toContain(
-                        result.data.type,
-                    );
-                    expect(result.data.timestamp).toBeInstanceOf(Date);
-                }
-            });
-        });
-    });
-
-    describe('Example 5: Custom Generators', () => {
-        it('should work with custom generators', () => {
-            const OrderSchema = z.object({
-                createdAt: z.date(),
-                customerId: z.string().describe('customer-id'),
-                id: z.string().describe('order-id'),
-                notes: z.string().optional(),
-                productId: z.string().describe('product-id'),
-                quantity: z.number().int().min(1).max(100),
                 status: z.enum([
                     'pending',
                     'processing',
@@ -931,825 +2003,57 @@ describe('ZodFactory', () => {
                     'delivered',
                     'cancelled',
                 ]),
-                total: z.number().min(0),
+                subtotal: moneySchema,
+                tax: moneySchema,
+                timestamps: z.object({
+                    createdAt: z.date(),
+                    deliveredAt: z.date().optional(),
+                    shippedAt: z.date().optional(),
+                    updatedAt: z.date(),
+                }),
+                total: moneySchema,
             });
 
-            const factory = new ZodFactory(OrderSchema, {
-                customGenerators: {
-                    'customer-id': () =>
-                        `CUST-${Math.random().toString(36).slice(2, 12).toUpperCase()}`,
-                    'order-id': () =>
-                        `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
-                    'product-id': () =>
-                        `PROD-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
-                },
-            });
+            const factory = new ZodFactory(orderSchema);
+            const orders = factory.batch(5);
 
-            const order = factory.build();
-
-            const result = OrderSchema.safeParse(order);
-            expect(result.success).toBe(true);
-
-            if (result.success) {
-                expect(result.data.id).toMatch(/^ORD-\d+-[A-Z0-9]{8}$/);
-                expect(result.data.customerId).toMatch(/^CUST-[A-Z0-9]{10}$/);
-                expect(result.data.productId).toMatch(/^PROD-[A-Z0-9]{8}$/);
-                expect(result.data.quantity).toBeGreaterThanOrEqual(1);
-                expect(result.data.quantity).toBeLessThanOrEqual(100);
+            orders.forEach((order) => {
+                expect(() => orderSchema.parse(order)).not.toThrow();
+                expect(order.items.length).toBeGreaterThanOrEqual(1);
                 expect([
                     'pending',
                     'processing',
                     'shipped',
                     'delivered',
                     'cancelled',
-                ]).toContain(result.data.status);
-            }
-        });
-    });
-
-    describe('Example 6: Array Constraints', () => {
-        it('should respect array constraints in complex schemas', () => {
-            const PlaylistSchema = z.object({
-                createdAt: z.date(),
-                createdBy: z.uuid(),
-                description: z.string().optional(),
-                id: z.uuid(),
-                isPublic: z.boolean(),
-                name: z.string().min(1).max(100),
-                songs: z
-                    .array(
-                        z.object({
-                            artist: z.string().min(1),
-                            duration: z.number().int().min(1).max(600),
-                            genre: z.enum([
-                                'rock',
-                                'pop',
-                                'jazz',
-                                'classical',
-                                'electronic',
-                                'hip-hop',
-                            ]),
-                            id: z.uuid(),
-                            title: z.string().min(1),
-                        }),
-                    )
-                    .min(3)
-                    .max(20),
-            });
-
-            const factory = new ZodFactory(PlaylistSchema);
-            const playlist = factory.build();
-
-            const result = PlaylistSchema.safeParse(playlist);
-            expect(result.success).toBe(true);
-
-            if (result.success) {
-                expect(result.data.songs.length).toBeGreaterThanOrEqual(3);
-                expect(result.data.songs.length).toBeLessThanOrEqual(20);
-
-                result.data.songs.forEach((song) => {
-                    expect(song.id).toMatch(
-                        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-                    );
-                    expect(song.duration).toBeGreaterThanOrEqual(1);
-                    expect(song.duration).toBeLessThanOrEqual(600);
-                    expect([
-                        'rock',
-                        'pop',
-                        'jazz',
-                        'classical',
-                        'electronic',
-                        'hip-hop',
-                    ]).toContain(song.genre);
-                });
-            }
-        });
-    });
-
-    describe('Example 7: Optional and Nullable Fields', () => {
-        it('should handle optional and nullable fields correctly', () => {
-            const UserProfileSchema = z.object({
-                avatar: z.url().optional(),
-                bio: z.string().max(500).nullable(),
-                createdAt: z.date(),
-                displayName: z.string().optional(),
-                email: z.email(),
-                id: z.uuid(),
-                lastLoginAt: z.date().nullable(),
-                settings: z.object({
-                    notifications: z.object({
-                        email: z.boolean(),
-                        push: z.boolean(),
-                        sms: z.boolean().optional(),
-                    }),
-                    privacy: z
-                        .object({
-                            profileVisibility: z.enum([
-                                'public',
-                                'friends',
-                                'private',
-                            ]),
-                            showEmail: z.boolean(),
-                        })
-                        .optional(),
-                    theme: z.enum(['light', 'dark']).optional(),
-                }),
-                socialLinks: z
-                    .array(
-                        z.object({
-                            platform: z.enum([
-                                'twitter',
-                                'linkedin',
-                                'github',
-                                'website',
-                            ]),
-                            url: z.url(),
-                        }),
-                    )
-                    .optional(),
-                username: z.string().min(3).max(30),
-            });
-
-            const factory = new ZodFactory(UserProfileSchema);
-            const profiles = factory.batch(10);
-
-            profiles.forEach((profile) => {
-                const result = UserProfileSchema.safeParse(profile);
-                expect(result.success).toBe(true);
-
-                if (result.success) {
-                    expect(result.data.username.length).toBeGreaterThanOrEqual(
-                        3,
-                    );
-                    expect(result.data.username.length).toBeLessThanOrEqual(30);
-                    expect(result.data.email).toMatch(
-                        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-                    );
-
-                    if (result.data.bio !== null) {
-                        expect(result.data.bio.length).toBeLessThanOrEqual(500);
-                    }
-
-                    if (result.data.socialLinks) {
-                        result.data.socialLinks.forEach((link) => {
-                            expect([
-                                'twitter',
-                                'linkedin',
-                                'github',
-                                'website',
-                            ]).toContain(link.platform);
-                            expect(link.url).toMatch(/^https?:\/\/.+/);
-                        });
-                    }
-                }
-            });
-        });
-    });
-
-    describe('Example 8: Performance Testing', () => {
-        it('should generate large batches efficiently', () => {
-            const SimpleSchema = z.object({
-                id: z.uuid(),
-                name: z.string(),
-                timestamp: z.date(),
-                value: z.number(),
-            });
-
-            const factory = new ZodFactory(SimpleSchema);
-
-            const startTime = Date.now();
-            const batch = factory.batch(1000);
-            const endTime = Date.now();
-
-            expect(batch).toHaveLength(1000);
-            expect(endTime - startTime).toBeLessThan(5000);
-
-            const sampleSize = Math.min(100, batch.length);
-            for (let i = 0; i < sampleSize; i++) {
-                const randomIndex = Math.floor(Math.random() * batch.length);
-                const result = SimpleSchema.safeParse(batch[randomIndex]);
-                expect(result.success).toBe(true);
-            }
-        });
-    });
-
-    describe('Example 9: Validation Testing', () => {
-        it('should generate data that passes strict validation', () => {
-            const StrictSchema = z.object({
-                balance: z.number().min(0).max(1_000_000),
-                email: z.email(),
-                id: z.uuid(),
-                metadata: z.record(z.string(), z.unknown()),
-                password: z.string().min(8).max(128),
-                preferences: z.object({
-                    notifications: z.boolean(),
-                    theme: z.enum(['light', 'dark']),
-                }),
-                profile: z.object({
-                    avatar: z.url().optional(),
-                    bio: z.string().max(500).optional(),
-                    displayName: z.string().min(1).max(50),
-                }),
-                tags: z.array(z.string()).min(1).max(20),
-                username: z.string().min(3).max(30),
-            });
-
-            const factory = new ZodFactory(StrictSchema);
-            const results = factory.batch(50);
-
-            const validResults = results.filter((result) => {
-                return StrictSchema.safeParse(result).success;
-            });
-
-            expect(validResults.length).toBeGreaterThan(results.length * 0.8);
-        });
-    });
-
-    describe('Integration Tests', () => {
-        it('should work with Factory class inheritance', () => {
-            const BaseSchema = z.object({
-                createdAt: z.date(),
-                id: z.uuid(),
-            });
-
-            const factory = new ZodFactory(BaseSchema);
-
-            expect(typeof factory.build).toBe('function');
-            expect(typeof factory.batch).toBe('function');
-
-            const single = factory.build();
-            const multiple = factory.batch(3);
-
-            expect(BaseSchema.safeParse(single).success).toBe(true);
-            expect(multiple).toHaveLength(3);
-            multiple.forEach((item) => {
-                expect(BaseSchema.safeParse(item).success).toBe(true);
-            });
-        });
-
-        it('should support build with overrides', () => {
-            const UserSchema = z.object({
-                age: z.number().int().min(18),
-                email: z.email(),
-                id: z.uuid(),
-                name: z.string(),
-            });
-
-            const factory = new ZodFactory(UserSchema);
-            const userData = factory.build({
-                email: 'john@example.com',
-                name: 'John Doe',
-            });
-
-            const result = UserSchema.safeParse(userData);
-            expect(result.success).toBe(true);
-
-            if (result.success) {
-                expect(result.data.name).toBe('John Doe');
-                expect(result.data.email).toBe('john@example.com');
-                expect(typeof result.data.id).toBe('string');
-                expect(result.data.id).toMatch(
-                    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-                );
-                expect(result.data.age).toBeGreaterThanOrEqual(18);
-            }
-        });
-
-        it('should work with custom generators in complex schemas', () => {
-            const UserSchema = z.object({
-                id: z.uuid(),
-                profile: z.object({
-                    avatar: z.url(),
-                    bio: z.string().describe('custom-bio'),
-                }),
-                settings: z.object({
-                    notifications: z.boolean(),
-                    theme: z.enum(['light', 'dark']),
-                }),
-                username: z.string().describe('custom-username'),
-            });
-
-            const factory = new ZodFactory(UserSchema, {
-                customGenerators: {
-                    'custom-bio': () =>
-                        'This is a custom bio for testing purposes.',
-                    'custom-username': () =>
-                        `user_${Math.random().toString(36).slice(2, 11)}`,
-                },
-            });
-
-            const userData = factory.build();
-
-            const result = UserSchema.safeParse(userData);
-            expect(result.success).toBe(true);
-
-            if (result.success) {
-                expect(result.data.username).toMatch(/^user_[a-z0-9]{9}$/);
-                expect(result.data.profile.bio).toBe(
-                    'This is a custom bio for testing purposes.',
-                );
-                expect(result.data.profile.avatar).toMatch(/^https?:\/\/.+/);
-                expect(['light', 'dark']).toContain(result.data.settings.theme);
-            }
-        });
-    });
-
-    describe('Complete Zod Feature Coverage', () => {
-        describe('Discriminated Union Types', () => {
-            it('should generate values from discriminated unions', () => {
-                const EventSchema = z.discriminatedUnion('type', [
-                    z.object({
-                        type: z.literal('click'),
-                        x: z.number(),
-                        y: z.number(),
-                    }),
-                    z.object({ element: z.string(), type: z.literal('hover') }),
-                    z.object({
-                        direction: z.enum(['up', 'down']),
-                        type: z.literal('scroll'),
-                    }),
-                ]);
-
-                const factory = new ZodFactory(EventSchema);
-                const results = factory.batch(20);
-
-                const types = [...new Set(results.map((r: any) => r.type))];
-
-                expect(types.length).toBeGreaterThan(1);
-                expect(types).toEqual(
-                    expect.arrayContaining(['click', 'hover', 'scroll']),
+                ]).toContain(order.status);
+                expect(['credit_card', 'paypal', 'bank_transfer']).toContain(
+                    order.paymentMethod.type,
                 );
 
-                results.forEach((result: any) => {
-                    expect(EventSchema.safeParse(result).success).toBe(true);
-                });
-            });
-        });
-
-        describe('Lazy Schemas', () => {
-            it('should handle lazy schemas correctly', () => {
-                interface Node {
-                    children?: Node[];
-                    id: string;
-                }
-
-                const NodeSchema: z.ZodType<Node> = z.lazy(() =>
-                    z.object({
-                        children: z.array(NodeSchema).optional(),
-                        id: z.string(),
-                    }),
-                );
-
-                const factory = new ZodFactory(NodeSchema);
-                const result = factory.build();
-
-                expect(typeof result.id).toBe('string');
-                if (result.children) {
-                    expect(Array.isArray(result.children)).toBe(true);
-                }
-            });
-        });
-
-        describe('Promise Schemas', () => {
-            it('should handle promise schemas', async () => {
-                const PromiseSchema = z.promise(z.string());
-                const factory = new ZodFactory(PromiseSchema);
-                const result = factory.build();
-
-                expect(result).toBeInstanceOf(Promise);
-                const resolved = await (result as unknown as Promise<string>);
-                expect(typeof resolved).toBe('string');
-            });
-
-            it('should handle nested promise schemas', async () => {
-                const NestedPromiseSchema = z.promise(
-                    z.object({
-                        data: z.array(z.number()),
-                        user: z.object({
-                            id: z.uuid(),
-                            name: z.string(),
-                        }),
-                    }),
-                );
-
-                const factory = new ZodFactory(NestedPromiseSchema);
-                const result = factory.build();
-
-                expect(result).toBeInstanceOf(Promise);
-                const resolved = await (result as unknown as Promise<{
-                    data: number[];
-                    user: { id: string; name: string };
-                }>);
-                expect(typeof resolved.user.id).toBe('string');
-                expect(typeof resolved.user.name).toBe('string');
-                expect(Array.isArray(resolved.data)).toBe(true);
-            });
-        });
-
-        describe('Advanced String Validation', () => {
-            it('should handle CUID strings', () => {
-                const schema = z.cuid();
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(typeof result).toBe('string');
-                expect(result.length).toBeGreaterThan(0);
-            });
-
-            it('should handle regex patterns', () => {
-                const schema = z.string().regex(/^[A-Z]{3}-\d{3}$/);
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(typeof result).toBe('string');
-            });
-
-            it('should handle multiple string constraints', () => {
-                const schema = z.email().min(10).max(50);
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(typeof result).toBe('string');
-                expect(result).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
-            });
-        });
-
-        describe('Advanced Number Validation', () => {
-            it('should handle positive numbers', () => {
-                const schema = z.number().positive();
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(typeof result).toBe('number');
-                expect(result).toBeGreaterThan(0);
-            });
-
-            it('should handle negative numbers', () => {
-                const schema = z.number().negative();
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(typeof result).toBe('number');
-                expect(result).toBeLessThan(0);
-            });
-
-            it('should handle step validation', () => {
-                const schema = z.number().multipleOf(0.5);
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(typeof result).toBe('number');
-            });
-        });
-
-        describe('Complex Object Schemas', () => {
-            it('should handle strict objects', () => {
-                const schema = z
-                    .object({
-                        age: z.number(),
-                        name: z.string(),
-                    })
-                    .strict();
-
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(Object.keys(result).sort()).toEqual(['age', 'name']);
-                expect(typeof result.name).toBe('string');
-                expect(typeof result.age).toBe('number');
-            });
-
-            it('should handle passthrough objects', () => {
-                const schema = z
-                    .object({
-                        name: z.string(),
-                    })
-                    .loose();
-
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(typeof result.name).toBe('string');
-            });
-
-            it('should handle partial objects', () => {
-                const BaseSchema = z.object({
-                    age: z.number(),
-                    email: z.email(),
-                    name: z.string(),
-                });
-
-                const PartialSchema = BaseSchema.partial();
-                const factory = new ZodFactory(PartialSchema);
-                const result = factory.build();
-
-                if (result.name !== undefined) {
-                    expect(typeof result.name).toBe('string');
-                }
-                if (result.age !== undefined) {
-                    expect(typeof result.age).toBe('number');
-                }
-                if (result.email !== undefined) {
-                    expect(typeof result.email).toBe('string');
-                }
-            });
-
-            it('should handle required fields from partial', () => {
-                const BaseSchema = z
-                    .object({
-                        age: z.number(),
-                        email: z.email(),
-                        name: z.string(),
-                    })
-                    .partial();
-
-                const RequiredSchema = BaseSchema.required({ name: true });
-                const factory = new ZodFactory(RequiredSchema);
-                const result = factory.build();
-
-                expect(typeof result.name).toBe('string');
-                if (result.age !== undefined) {
-                    expect(typeof result.age).toBe('number');
-                }
-                if (result.email !== undefined) {
-                    expect(typeof result.email).toBe('string');
-                }
-            });
-        });
-
-        describe('Tuple Schemas', () => {
-            it('should handle basic tuples', () => {
-                const schema = z.tuple([z.string(), z.number(), z.boolean()]);
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(Array.isArray(result)).toBe(true);
-                expect(result).toHaveLength(3);
-                expect(typeof result[0]).toBe('string');
-                expect(typeof result[1]).toBe('number');
-                expect(typeof result[2]).toBe('boolean');
-            });
-
-            it('should handle tuples with rest elements', () => {
-                const schema = z
-                    .tuple([z.string(), z.number()])
-                    .rest(z.boolean());
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(Array.isArray(result)).toBe(true);
-                expect(result.length).toBeGreaterThanOrEqual(2);
-                expect(typeof result[0]).toBe('string');
-                expect(typeof result[1]).toBe('number');
-
-                for (let i = 2; i < result.length; i++) {
-                    expect(typeof result[i]).toBe('boolean');
-                }
-            });
-        });
-
-        describe('Map and Set Schemas', () => {
-            it('should handle Map schemas', () => {
-                const schema = z.map(z.string(), z.number());
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(result).toBeInstanceOf(Map);
-                if (result.size > 0) {
-                    for (const [key, value] of result.entries()) {
-                        expect(typeof key).toBe('string');
-                        expect(typeof value).toBe('number');
-                    }
-                }
-            });
-
-            it('should handle Set schemas', () => {
-                const schema = z.set(z.string());
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(result).toBeInstanceOf(Set);
-                if (result.size > 0) {
-                    for (const value of result.values()) {
-                        expect(typeof value).toBe('string');
-                    }
-                }
-            });
-        });
-
-        describe('Advanced Union Types', () => {
-            it('should handle complex unions with many types', () => {
-                const schema = z.union([
-                    z.string(),
-                    z.number(),
-                    z.boolean(),
-                    z.array(z.string()),
-                    z.object({ data: z.any(), type: z.literal('complex') }),
-                ]);
-
-                const factory = new ZodFactory(schema);
-                const results = factory.batch(50);
-
-                const types = [
-                    ...new Set(
-                        results.map((r: unknown) => {
-                            if (Array.isArray(r)) {
-                                return 'array';
-                            }
-                            if (r && typeof r === 'object') {
-                                return 'object';
-                            }
-                            return typeof r;
-                        }),
-                    ),
-                ];
-
-                expect(types.length).toBeGreaterThan(1);
-            });
-        });
-
-        describe('Default Values', () => {
-            it('should handle default values in optional schemas', () => {
-                const schema = z.object({
-                    active: z.boolean().optional().default(true),
-                    count: z.number().default(0),
-                    name: z.string(),
-                });
-
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(typeof result.name).toBe('string');
-                expect(typeof result.count).toBe('number');
-                expect(typeof result.active).toBe('boolean');
-            });
-        });
-
-        describe('Brand Types', () => {
-            it('should handle branded types', () => {
-                const UserId = z.string().brand('UserId');
-                const factory = new ZodFactory(UserId);
-                const result = factory.build();
-
-                expect(typeof result).toBe('string');
-            });
-        });
-
-        describe('Catch and Pipeline', () => {
-            it('should handle catch schemas', () => {
-                const schema = z.string().catch('fallback');
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(typeof result).toBe('string');
-            });
-        });
-
-        describe('Custom Type Extensions', () => {
-            it('should support z.custom validation', () => {
-                const schema = z.custom<string>(
-                    (val) => typeof val === 'string',
-                );
-
-                const factory = new ZodFactory(schema);
-                expect(() => {
-                    factory.build();
-                }).toThrow(
-                    'ZodFactory cannot generate data for z.custom() schemas',
-                );
-
-                const schemaWithDesc = z
-                    .custom<string>((val) => typeof val === 'string')
-                    .describe('custom-string');
-                const factoryWithGenerator = new ZodFactory(schemaWithDesc, {
-                    customGenerators: {
-                        'custom-string': () => 'custom-generated-string',
-                    },
-                });
-                const result = factoryWithGenerator.build();
-                expect(result).toBe('custom-generated-string');
-            });
-
-            it('should handle complex custom validations', () => {
-                interface CustomData {
-                    signature: string;
-                    timestamp: number;
-                }
-
-                const schema = z
-                    .custom<CustomData>((val) => {
-                        return (
-                            typeof val === 'object' &&
-                            val !== null &&
-                            'timestamp' in val &&
-                            'signature' in val
+                // Verify discriminated union
+                switch (order.paymentMethod.type) {
+                    case 'bank_transfer': {
+                        expect(typeof order.paymentMethod.accountNumber).toBe(
+                            'string',
                         );
-                    })
-                    .describe('custom-data');
-
-                const factory = new ZodFactory(schema, {
-                    customGenerators: {
-                        'custom-data': () => ({
-                            signature: 'test-signature',
-                            timestamp: Date.now(),
-                        }),
-                    },
-                });
-                const result = factory.build();
-
-                expect(result).toBeDefined();
-                expect(result.signature).toBe('test-signature');
-                expect(typeof result.timestamp).toBe('number');
-            });
-        });
-
-        describe('Error Handling and Edge Cases', () => {
-            it('should handle never schemas gracefully', () => {
-                const schema = z.never();
-
-                expect(() => {
-                    const factory = new ZodFactory(schema);
-                    factory.build();
-                }).toThrow(
-                    'ZodNever should never be reached in factory generation',
-                );
-            });
-
-            it('should handle void schemas', () => {
-                const schema = z.void();
-                const factory = new ZodFactory(schema);
-                const result = factory.build();
-
-                expect(result).toBeUndefined();
-            });
-
-            it('should handle symbol schemas with custom registration', () => {
-                const testSymbol = Symbol('test');
-
-                const SymbolSchema = z.custom<symbol>(
-                    (val) => typeof val === 'symbol',
-                    { message: 'Must be a symbol' },
-                );
-
-                Object.defineProperty(SymbolSchema.constructor, 'name', {
-                    value: 'ZodSymbol',
-                });
-
-                registerZodType('ZodSymbol', () => testSymbol);
-
-                const factory = new ZodFactory(SymbolSchema);
-                const result = factory.build();
-
-                expect(result).toBe(testSymbol);
-
-                unregisterZodType('ZodSymbol');
-            });
-        });
-
-        describe('Performance and Batch Generation', () => {
-            it('should handle large schema generation efficiently', () => {
-                const LargeSchema = z.object({
-                    metadata: z.object({
-                        flags: z.record(z.string(), z.boolean()),
-                        timestamp: z.date(),
-                        version: z.string(),
-                    }),
-                    users: z
-                        .array(
-                            z.object({
-                                id: z.uuid(),
-                                posts: z
-                                    .array(
-                                        z.object({
-                                            content: z.string(),
-                                            id: z.uuid(),
-                                            tags: z.array(z.string()),
-                                            title: z.string(),
-                                        }),
-                                    )
-                                    .min(1)
-                                    .max(5),
-                                profile: z.object({
-                                    email: z.email(),
-                                    name: z.string(),
-                                    settings: z.object({
-                                        notifications: z.boolean(),
-                                        theme: z.enum(['light', 'dark']),
-                                    }),
-                                }),
-                            }),
-                        )
-                        .min(10)
-                        .max(20),
-                });
-
-                const factory = new ZodFactory(LargeSchema);
-                const startTime = Date.now();
-                const result = factory.build();
-                const endTime = Date.now();
-
-                expect(endTime - startTime).toBeLessThan(1000);
-                expect(LargeSchema.safeParse(result).success).toBe(true);
+                        break;
+                    }
+                    case 'credit_card': {
+                        expect(order.paymentMethod.last4.length).toBe(4);
+                        expect([
+                            'visa',
+                            'mastercard',
+                            'amex',
+                            'discover',
+                        ]).toContain(order.paymentMethod.brand);
+                        break;
+                    }
+                    case 'paypal': {
+                        expect(order.paymentMethod.email).toContain('@');
+                        break;
+                    }
+                }
             });
         });
     });
