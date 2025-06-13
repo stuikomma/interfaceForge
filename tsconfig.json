@@ -23,7 +23,8 @@
         "strictPropertyInitialization": true,
         "types": ["vitest/globals", "vitest"],
         "paths": {
-            "interface-forge": ["./src/index.ts"]
+            "interface-forge": ["./src/index.ts"],
+            "interface-forge/zod": ["./src/zod.ts"]
         }
     }
 }

@@ -8,10 +8,8 @@
  * - Overriding default values
  */
 
-import { Factory } from '../src';
-import { Faker } from '@faker-js/faker';
+import { Factory } from 'interface-forge';
 
-// Define your TypeScript interface
 interface User {
     age: number;
     createdAt: Date;
@@ -21,25 +19,21 @@ interface User {
     name: string;
 }
 
-// Create a factory for the User interface
-const UserFactory = new Factory<User>((faker: Faker) => ({
-    age: faker.number.int({ max: 80, min: 18 }),
-    createdAt: faker.date.past(),
-    email: faker.internet.email(),
-    id: faker.string.uuid(),
-    isActive: faker.datatype.boolean(),
-    name: faker.person.fullName(),
+const UserFactory = new Factory<User>((factory) => ({
+    age: factory.number.int({ max: 80, min: 18 }),
+    createdAt: factory.date.past(),
+    email: factory.internet.email(),
+    id: factory.string.uuid(),
+    isActive: factory.datatype.boolean(),
+    name: factory.person.fullName(),
 }));
 
-// Example 1: Build a single user
 const user = UserFactory.build();
 console.log('Single user:', user);
 
-// Example 2: Build a batch of users
 const users = UserFactory.batch(5);
 console.log(`Generated ${users.length} users`);
 
-// Example 3: Override specific fields
 const customUser = UserFactory.build({
     email: 'john@example.com',
     isActive: true,
@@ -47,15 +41,12 @@ const customUser = UserFactory.build({
 });
 console.log('Custom user:', customUser);
 
-// Example 4: Batch with overrides
 const activeUsers = UserFactory.batch(3, {
     age: 25,
     isActive: true,
 });
 console.log('Active users:', activeUsers);
 
-// Example 5: Using Faker methods directly
-// Since Factory extends Faker, you can use any Faker method
 const companyName = UserFactory.company.name();
 const futureDate = UserFactory.date.future();
 console.log('Company:', companyName, 'Future date:', futureDate);

@@ -21,7 +21,6 @@ interface Order {
     total: number;
 }
 
-// Domain models
 interface Product {
     category: string;
     id: string;
@@ -30,7 +29,6 @@ interface Product {
     price: number;
 }
 
-// Factories
 const ProductFactory = new Factory<Product>((faker) => ({
     category: faker.commerce.department(),
     id: faker.string.uuid(),
@@ -66,18 +64,13 @@ const OrderFactory = new Factory<Order>((faker) => {
     };
 });
 
-// Example 1: Unit Test Scenario
-// Testing a price calculation function
 function calculateDiscount(order: Order, discountPercentage: number): number {
     return order.total * (discountPercentage / 100);
 }
 
-// Create test data
 const testOrder = OrderFactory.build({ total: 100 });
 console.log('Discount test:', calculateDiscount(testOrder, 10) === 10);
 
-// Example 2: Integration Test Scenario
-// Testing with specific product categories
 const electronicProducts = ProductFactory.batch(5, {
     category: 'Electronics',
     inStock: true,
@@ -95,63 +88,6 @@ console.log(
     outOfStockOrder.items.every((item) => !item.product.inStock),
 );
 
-// Example 3: Vitest/Jest Example Structure
-/*
-describe('Order Processing', () => {
-    it('should calculate order total correctly', () => {
-        const order = OrderFactory.build({
-            items: [
-                { product: ProductFactory.build({ price: 10 }), quantity: 2 },
-                { product: ProductFactory.build({ price: 20 }), quantity: 1 }
-            ]
-        });
-        
-        expect(order.total).toBe(40);
-    });
-    
-    it('should handle empty orders', () => {
-        const emptyOrder = OrderFactory.build({ items: [] });
-        expect(emptyOrder.total).toBe(0);
-    });
-    
-    it('should generate unique IDs', () => {
-        const orders = OrderFactory.batch(100);
-        const uniqueIds = new Set(orders.map(o => o.id));
-        expect(uniqueIds.size).toBe(100);
-    });
-});
-*/
-
-// Example 4: Storybook Story Example
-/*
-export default {
-    title: 'Components/OrderList',
-    component: OrderList,
-};
-
-export const Default = {
-    args: {
-        orders: OrderFactory.batch(5)
-    }
-};
-
-export const PendingOrders = {
-    args: {
-        orders: OrderFactory.batch(10, { status: 'pending' })
-    }
-};
-
-export const LargeOrders = {
-    args: {
-        orders: OrderFactory.iterate((faker, i) => ({
-            total: 1000 + (i * 500),
-            items: CartItemFactory.batch(10 + i)
-        })).batch(5)
-    }
-};
-*/
-
-// Example 5: Snapshot Testing
 const snapshotData = OrderFactory.build({
     createdAt: new Date('2024-01-01'),
     customerId: 'customer-456',

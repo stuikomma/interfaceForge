@@ -10,13 +10,18 @@ const { name } = manifest as PackageJson;
 export default defineConfig({
     build: {
         lib: {
-            entry: path.resolve(__dirname, 'src/index.ts'),
-            fileName: (format) => `index.${format === 'es' ? 'mjs' : 'js'}`,
+            entry: {
+                index: path.resolve(__dirname, 'src/index.ts'),
+                zod: path.resolve(__dirname, 'src/zod.ts'),
+            },
+            fileName: (format, entryName) =>
+                `${entryName}.${format === 'es' ? 'mjs' : 'js'}`,
             formats: ['es', 'cjs'],
             name,
         },
         minify: true,
         rollupOptions: {
+            external: ['zod'],
             output: {
                 preserveModules: false,
             },

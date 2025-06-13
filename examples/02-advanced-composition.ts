@@ -7,7 +7,6 @@
 
 import { Factory } from 'interface-forge';
 
-// Define interfaces for a blog system
 interface Author {
     bio: string;
     email: string;
@@ -33,7 +32,6 @@ interface Comment {
     id: string;
 }
 
-// Create individual factories
 const AuthorFactory = new Factory<Author>((faker) => ({
     bio: faker.lorem.paragraph(),
     email: faker.internet.email(),
@@ -48,7 +46,6 @@ const CommentFactory = new Factory<Comment>((faker) => ({
     id: faker.string.uuid(),
 }));
 
-// Compose factories together
 const BlogPostFactory = new Factory<BlogPost>((faker) => ({
     author: AuthorFactory.build(),
     comments: CommentFactory.batch(faker.number.int({ max: 10, min: 0 })),
@@ -62,13 +59,11 @@ const BlogPostFactory = new Factory<BlogPost>((faker) => ({
     viewCount: faker.number.int({ max: 10_000, min: 0 }),
 }));
 
-// Example 1: Create a blog post with all relationships
 const blogPost = BlogPostFactory.build();
 console.log('Blog post:', blogPost.title);
 console.log('Author:', blogPost.author.name);
 console.log('Comments:', blogPost.comments.length);
 
-// Example 2: Create a blog post with specific author
 const specificAuthor = AuthorFactory.build({ name: 'Jane Smith' });
 const authoredPost = BlogPostFactory.build({
     author: specificAuthor,
@@ -76,7 +71,6 @@ const authoredPost = BlogPostFactory.build({
 });
 console.log('Post by Jane:', authoredPost);
 
-// Example 3: Using compose() for factory composition
 const CompositeBlogFactory = BlogPostFactory.compose({
     author: AuthorFactory,
     comments: CommentFactory.batch(3),
@@ -85,7 +79,6 @@ const CompositeBlogFactory = BlogPostFactory.compose({
 const composedPost = CompositeBlogFactory.build();
 console.log('Composed post:', composedPost);
 
-// Example 4: Creating posts with increasing comments
 const progressivePosts = Array.from({ length: 5 }, (_, index) =>
     BlogPostFactory.build({
         comments: CommentFactory.batch(index * 2),
