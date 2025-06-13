@@ -78,8 +78,8 @@ const CategorySchema: z.ZodType<Category> = z.lazy(() =>
     }),
 );
 
-const categoryFactory = new ZodFactory(CategorySchema, { maxDepth: 3 });
-const categoryTree = categoryFactory.build();
+const categoryFactory = new ZodFactory(CategorySchema as any, { maxDepth: 3 });
+const categoryTree = categoryFactory.build() as Category;
 
 // Helper to count depth
 function countDepth(category: Category, currentDepth = 0): number {
@@ -87,7 +87,9 @@ function countDepth(category: Category, currentDepth = 0): number {
         return currentDepth;
     }
     return Math.max(
-        ...category.subcategories.map((sub) => countDepth(sub, currentDepth + 1)),
+        ...category.subcategories.map((sub) =>
+            countDepth(sub, currentDepth + 1),
+        ),
     );
 }
 
@@ -108,19 +110,25 @@ const treeSchema: z.ZodType<TreeNode> = z.lazy(() =>
     z.object({
         left: treeSchema.optional(),
         right: treeSchema.optional(),
-        value: z.number().int({ max: 100, min: 1 }),
+        value: z.number().int().min(1).max(100),
     }),
 );
 
 // Test different depths
 [1, 2, 3, 5].forEach((depth) => {
-    const factory = new ZodFactory(treeSchema, { maxDepth: depth });
-    const tree = factory.build();
+    const factory = new ZodFactory(treeSchema as any, { maxDepth: depth });
+    const tree = factory.build() as TreeNode;
 
     function getMaxDepth(node: TreeNode | undefined, current = 0): number {
-        if (!node) {return current;}
-        const leftDepth = node.left ? getMaxDepth(node.left, current + 1) : current;
-        const rightDepth = node.right ? getMaxDepth(node.right, current + 1) : current;
+        if (!node) {
+            return current;
+        }
+        const leftDepth = node.left
+            ? getMaxDepth(node.left, current + 1)
+            : current;
+        const rightDepth = node.right
+            ? getMaxDepth(node.right, current + 1)
+            : current;
         return Math.max(leftDepth, rightDepth);
     }
 
@@ -149,17 +157,19 @@ const CommentSchema: z.ZodType<Comment> = z.lazy(() =>
 );
 
 // Create a comment thread with limited depth
-const commentFactory = new ZodFactory(CommentSchema, {
+const commentFactory = new ZodFactory(CommentSchema as any, {
     maxDepth: 4, // Allows for main comment + 3 levels of replies
 });
 
-const commentThread = commentFactory.build();
+const commentThread = commentFactory.build() as Comment;
 
 function printCommentThread(comment: Comment, indent = ''): void {
-    console.log(`${indent}[${comment.author}]: ${comment.content.slice(0, 50)}...`);
+    console.log(
+        `${indent}[${comment.author}]: ${comment.content.slice(0, 50)}...`,
+    );
     if (comment.replies) {
         comment.replies.forEach((reply) => {
-            printCommentThread(reply, `${indent  }  `);
+            printCommentThread(reply, `${indent}  `);
         });
     }
 }
@@ -169,7 +179,9 @@ printCommentThread(commentThread);
 
 // Example 6: Best Practices Summary
 console.log('\n=== Best Practices for MaxDepth ===');
-console.log('1. Always use .optional() for nested objects that might hit depth limits');
+console.log(
+    '1. Always use .optional() for nested objects that might hit depth limits',
+);
 console.log('2. Design schemas with natural termination points');
 console.log('3. Consider the total depth needed for your use case');
 console.log('4. Test with different maxDepth values to ensure proper behavior');
