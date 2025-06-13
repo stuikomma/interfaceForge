@@ -10,6 +10,7 @@ import {
 import { ConfigurationError } from './errors';
 import { CycleGenerator, SampleGenerator } from './generators';
 import { merge, Ref } from './utils';
+import { DEFAULT_MAX_DEPTH } from './constants';
 
 export {
     CircularReferenceError,
@@ -43,8 +44,6 @@ export type FactorySchema<T> = {
 };
 
 type AfterBuildHook<T> = (obj: T) => Promise<T> | T;
-
-const defaultMaxDepth = 10;
 
 type BeforeBuildHook<T> = (
     params: Partial<T>,
@@ -414,7 +413,7 @@ export class Factory<
                 );
                 return { ...baseValues, ...composedValues } as FactorySchema<U>;
             },
-            { maxDepth: this.options?.maxDepth ?? defaultMaxDepth },
+            { maxDepth: this.options?.maxDepth ?? DEFAULT_MAX_DEPTH },
         );
     }
 
@@ -458,7 +457,7 @@ export class Factory<
                 }
                 return { ...baseValues, ...extendedValues };
             },
-            { maxDepth: this.options?.maxDepth ?? defaultMaxDepth },
+            { maxDepth: this.options?.maxDepth ?? DEFAULT_MAX_DEPTH },
         );
     }
 
@@ -550,7 +549,7 @@ export class Factory<
         kwargs?: Partial<T>,
         depth = 0,
     ): Promise<T> | T {
-        if (depth >= (this.options?.maxDepth ?? defaultMaxDepth)) {
+        if (depth >= (this.options?.maxDepth ?? DEFAULT_MAX_DEPTH)) {
             return null as T;
         }
 
@@ -567,7 +566,7 @@ export class Factory<
                     ) => {
                         if (
                             depth + 1 >=
-                            (target.options?.maxDepth ?? defaultMaxDepth)
+                            (target.options?.maxDepth ?? DEFAULT_MAX_DEPTH)
                         ) {
                             return null;
                         }
@@ -626,7 +625,7 @@ export class Factory<
         kwargs?: Partial<T>,
         depth = 0,
     ): Promise<T> {
-        if (depth >= (this.options?.maxDepth ?? defaultMaxDepth)) {
+        if (depth >= (this.options?.maxDepth ?? DEFAULT_MAX_DEPTH)) {
             return null as T;
         }
 
@@ -643,7 +642,7 @@ export class Factory<
                     ) => {
                         if (
                             depth + 1 >=
-                            (target.options?.maxDepth ?? defaultMaxDepth)
+                            (target.options?.maxDepth ?? DEFAULT_MAX_DEPTH)
                         ) {
                             return null;
                         }
