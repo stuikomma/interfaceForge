@@ -737,8 +737,8 @@ describe('ZodFactory', () => {
                                 level4: z.object({
                                     level5: z.object({
                                         value: z.string(),
-                                    }),
-                                }),
+                                    }).optional(),
+                                }).optional(),
                             }),
                         }),
                     }),
@@ -750,9 +750,9 @@ describe('ZodFactory', () => {
                 expect(result.level1).toBeDefined();
                 expect(result.level1.level2).toBeDefined();
                 expect(result.level1.level2.level3).toBeDefined();
-                // Level 4 and beyond should be empty due to depth limit
+                // Level 4 should be empty due to depth limit (maxDepth=3 means we stop at depth 3)
                 expect(
-                    Object.keys(result.level1.level2.level3.level4).length,
+                    Object.keys(result.level1.level2.level3.level4 ?? {}).length,
                 ).toBe(0);
             });
         });

@@ -692,6 +692,7 @@ const factory = new ZodFactory(
 - [Basic Zod Usage](./examples/07-zod-basic.ts) - Simple schemas and API responses
 - [Advanced Zod Patterns](./examples/07-zod-integration.ts) - Complex schemas, unions, and recursion
 - [Testing with Zod](./examples/07-zod-testing.ts) - Real-world testing scenarios
+- [MaxDepth with Zod](./examples/08-zod-maxdepth.ts) - Handling depth limits in nested schemas
 
 ## Performance Considerations
 
@@ -703,13 +704,60 @@ When generating large batches, consider:
 - Use streaming or chunking for very large datasets
 - Hooks are applied to each instance individually
 
-### Recursive Schemas
+### Recursive Schemas and MaxDepth Behavior
 
 For recursive or circular data structures:
 
 - Use `maxDepth` option to limit recursion (especially with Zod)
 - Prefer `use()` for lazy evaluation to avoid infinite loops
 - Consider memory implications of deeply nested structures
+
+#### Important: MaxDepth with Zod Schemas
+
+When using `maxDepth` with ZodFactory, be aware that the factory returns empty objects `{}` when the depth limit is reached. This can cause Zod validation to fail if your schema has required nested fields at the depth limit:
+
+```typescript
+// ❌ Problematic: Required nested objects will fail validation
+const ProblematicSchema = z.object({
+    level1: z.object({
+        level2: z.object({
+            level3: z.object({
+                level4: z.object({
+                    value: z.string() // Required field
+                })
+            })
+        })
+    })
+});
+
+const factory = new ZodFactory(ProblematicSchema, { maxDepth: 3 });
+// This will throw a ZodError because level4 will be an empty object
+// missing the required 'value' field
+
+// ✅ Better: Use optional for deeply nested objects
+const CompatibleSchema = z.object({
+    level1: z.object({
+        level2: z.object({
+            level3: z.object({
+                level4: z.object({
+                    value: z.string()
+                }).optional() // Make deep nesting optional
+            })
+        })
+    })
+});
+
+const factory = new ZodFactory(CompatibleSchema, { maxDepth: 3 });
+const result = factory.build(); // Works correctly
+
+// ✅ Best: Design recursive schemas with optional children
+const RecursiveSchema = z.lazy(() => z.object({
+    name: z.string(),
+    children: z.array(RecursiveSchema).optional() // Self-referencing with optional
+}));
+
+const recursiveFactory = new ZodFactory(RecursiveSchema, { maxDepth: 3 });
+```
 
 ## Common Patterns
 

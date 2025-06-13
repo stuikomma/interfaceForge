@@ -122,6 +122,40 @@ const factory = new ZodFactory(schema).withTypeHandler(
 
 **Complex Recursive Schemas**: Deeply nested recursive schemas with `z.lazy()` may hit depth limits and require careful maxDepth tuning or custom handlers.
 
+**MaxDepth Behavior**: When using the `maxDepth` option, schemas should be designed to accommodate depth limiting:
+
+```typescript
+// ❌ Problematic: Required nested objects will fail validation at depth limit
+const problematicSchema = z.object({
+  level1: z.object({
+    level2: z.object({
+      level3: z.object({
+        level4: z.object({ value: z.string() }) // Required - will fail at maxDepth=3
+      })
+    })
+  })
+});
+
+// ✅ Better: Use optional nested objects for depth limiting compatibility
+const compatibleSchema = z.object({
+  level1: z.object({
+    level2: z.object({
+      level3: z.object({
+        level4: z.object({ value: z.string() }).optional() // Optional - works with maxDepth
+      })
+    })
+  })
+});
+
+// ✅ Best: Design schemas with natural depth limits
+const recursiveSchema = z.lazy(() => z.object({
+  name: z.string(),
+  children: z.array(recursiveSchema).optional() // Self-referencing with optional children
+}));
+```
+
+The factory returns empty objects `{}` when hitting the depth limit, so deeper required fields will cause Zod validation to fail.
+
 ### Common Pitfalls
 
 1. **Numeric enums**: TypeScript numeric enums have reverse mappings that need to be filtered out

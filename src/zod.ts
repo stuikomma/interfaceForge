@@ -1015,12 +1015,22 @@ class ZodSchemaGenerator {
 
             ZodLazy: (schema, generator, currentDepth) => {
                 const { def } = (schema as unknown as $ZodLazy)._zod;
+                const maxDepth = generator.factory.options?.maxDepth ?? DEFAULT_MAX_DEPTH;
+
+                if (currentDepth >= maxDepth) {
+                    try {
+                        const innerSchema = def.getter();
+                        return generator.getDepthLimitFallback(innerSchema as ZodType);
+                    } catch {
+                        return {};
+                    }
+                }
 
                 try {
                     const innerSchema = def.getter();
                     return generator.generateFromSchema(
                         innerSchema as ZodType,
-                        currentDepth,
+                        currentDepth + 1,
                     );
                 } catch {
                     return {};
@@ -1071,7 +1081,6 @@ class ZodSchemaGenerator {
     }
 
     private tryGenerateFromMetadata(schema: ZodType): unknown {
-        // In Zod v4, global registry is not available, use schema metadata directly
         const metadata =
             // eslint-disable-next-line @typescript-eslint/unbound-method
             isFunction(schema.meta) ? schema.meta() : undefined;
