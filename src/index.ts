@@ -10,17 +10,17 @@ import {
 import { ConfigurationError } from './errors';
 import { CycleGenerator, SampleGenerator } from './generators';
 import { merge, Ref } from './utils';
-import { PersistenceAdapter } from './persistence/persistence-adapter';
+import { PersistenceAdapter } from './persistence-adapter';
 
+export * from '../examples/adapters/mongoose-adapter';
+export * from '../examples/adapters/prisma-adapter';
+export * from '../examples/adapters/typeorm-adapter';
 export {
     CircularReferenceError,
     ConfigurationError,
     ValidationError,
 } from './errors';
-export * from './persistence/adapters/mongoose-adapter';
-export * from './persistence/adapters/prisma-adapter';
-export * from './persistence/adapters/typeorm-adapter';
-export { PersistenceAdapter } from './persistence/persistence-adapter';
+export { PersistenceAdapter } from './persistence-adapter';
 export { Ref } from './utils';
 
 export type FactoryComposition<T> = {

@@ -1,4 +1,4 @@
-import { PersistenceAdapter } from '../persistence-adapter';
+import { PersistenceAdapter } from '../../src/persistence-adapter';
 
 /**
  * A persistence adapter for Prisma, allowing `Factory` to save generated
