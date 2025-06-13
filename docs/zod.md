@@ -1,20 +1,20 @@
 # Zod Factory Integration
 
-The `createFactoryFromZod` function allows you to automatically generate factories from Zod schemas, similar to how the Python package Polyfactory works with Pydantic models.
+Interface-Forge provides seamless integration with [Zod](https://zod.dev/) schemas through the `ZodFactory` class, allowing you to generate type-safe mock data that automatically conforms to your Zod schema definitions.
 
 ## Installation
 
 First, make sure you have `interface-forge` installed:
 
 ```bash
-npm install interface-forge
+npm install --save-dev interface-forge
 # or
-pnpm add interface-forge
+pnpm add --save-dev interface-forge
 # or
-yarn add interface-forge
+yarn add --dev interface-forge
 ```
 
-Since Zod is declared as an optional peerDependency, you also need to install it separately:
+Since Zod is declared as an optional peer dependency, you also need to install it separately:
 
 ```bash
 npm install zod
@@ -24,56 +24,128 @@ pnpm add zod
 yarn add zod
 ```
 
+**Important**: The ZodFactory uses Zod v4 API which is available within the Zod v3 package. When importing Zod types, use `import { z } from 'zod/v4'` to access the v4 API.
+
 ## Basic Usage
 
 ```typescript
-import { z } from 'zod';
-import { createFactoryFromZod } from 'interface-forge/zod';
+import { z } from 'zod/v4';
+import { ZodFactory } from 'interface-forge/zod';
 
 const UserSchema = z.object({
   id: z.string().uuid(),
-  name: z.string().min(1),
+  name: z.string().min(1).max(100),
   email: z.string().email(),
-  age: z.number().int().min(0).max(120),
+  age: z.number().int().min(18).max(120),
   isActive: z.boolean(),
   createdAt: z.date(),
   tags: z.array(z.string()),
-  metadata: z.record(z.unknown()).optional()
+  metadata: z.record(z.string(), z.unknown()).optional()
 });
 
-// Automatically create a factory from the Zod schema
-const UserFactory = createFactoryFromZod(UserSchema);
+// Create a factory from the Zod schema
+const userFactory = new ZodFactory(UserSchema);
 
-// Use the factory
-const user = UserFactory.build();
-const users = UserFactory.batch(10);
+// Generate a single user
+const user = userFactory.build();
+
+// Generate multiple users
+const users = userFactory.batch(10);
+
+// Generate with overrides
+const adminUser = userFactory.build({
+  isActive: true,
+  tags: ['admin', 'power-user']
+});
+```
+
+## Partial Factory Functions
+
+One of the most powerful features of ZodFactory is the ability to use **partial factory functions**. This allows you to customize only specific fields while automatically generating the rest from the schema:
+
+```typescript
+import { z } from 'zod/v4';
+import { ZodFactory } from 'interface-forge/zod';
+
+const UserSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  email: z.string().email(),
+  role: z.enum(['admin', 'user', 'guest']),
+  createdAt: z.date(),
+  settings: z.object({
+    theme: z.enum(['light', 'dark']),
+    notifications: z.boolean(),
+    language: z.string()
+  })
+});
+
+// Partial factory function - only customize what you need
+const userFactory = new ZodFactory(UserSchema, (faker) => ({
+  // Only customize these fields for deterministic test data
+  name: faker.person.fullName(),
+  role: 'user', // Always create regular users
+  settings: {
+    theme: 'light', // Always use light theme in tests
+    // notifications and language will be auto-generated
+  },
+  // id, email, createdAt will be auto-generated from schema
+}));
+
+const user = userFactory.build();
+// user.name === 'John Doe' (from factory function)
+// user.role === 'user' (from factory function)
+// user.settings.theme === 'light' (from factory function)
+// user.settings.notifications === true/false (auto-generated)
+// user.id === valid UUID (auto-generated)
+// user.email === valid email (auto-generated)
 ```
 
 ## Supported Zod Types
 
 ### Primitive Types
 
-- **String**: `z.string()`
-- **Number**: `z.number()`
-- **Boolean**: `z.boolean()`
-- **Date**: `z.date()`
-- **Null**: `z.null()`
-- **Undefined**: `z.undefined()`
-- **Any**: `z.any()`
-- **Unknown**: `z.unknown()`
+- **String**: `z.string()` - Generates random alphanumeric strings
+- **Number**: `z.number()` - Generates random numbers
+- **Boolean**: `z.boolean()` - Generates true/false randomly
+- **Date**: `z.date()` - Generates recent dates
+- **BigInt**: `z.bigint()` - Generates random bigints
+- **Null**: `z.null()` - Always returns null
+- **Undefined**: `z.undefined()` - Always returns undefined
+- **Any**: `z.any()` - Generates various random types
+- **Unknown**: `z.unknown()` - Generates various random types
 
 ### String Constraints
 
-The factory respects various string constraints:
+The factory respects various string constraints and formats:
 
 ```typescript
 const schema = z.object({
+  // Format constraints
   email: z.string().email(),           // Generates valid email
   url: z.string().url(),               // Generates valid URL
   uuid: z.string().uuid(),             // Generates valid UUID
+  cuid: z.string().cuid(),             // Generates valid CUID
+  cuid2: z.string().cuid2(),           // Generates valid CUID2
+  ulid: z.string().ulid(),             // Generates valid ULID
+  
+  // Length constraints
   minMax: z.string().min(5).max(20),   // Respects length constraints
   exact: z.string().length(10),        // Generates exact length
-  pattern: z.string().regex(/^\d+$/),  // Basic regex support
+  
+  // Pattern matching
+  pattern: z.string().regex(/^[A-Z]\d{3}$/), // Basic regex support
+  
+  // Special formats
+  datetime: z.string().datetime(),     // ISO datetime string
+  date: z.string().date(),            // ISO date string
+  time: z.string().time(),            // Time string
+  duration: z.string().duration(),     // ISO duration
+  ip: z.string().ip(),                // Valid IP address
+  ipv4: z.string().ipv4(),            // Valid IPv4
+  ipv6: z.string().ipv6(),            // Valid IPv6
+  base64: z.string().base64(),        // Base64 encoded string
+  jwt: z.string().jwt(),              // JWT token format
 });
 ```
 
@@ -81,10 +153,24 @@ const schema = z.object({
 
 ```typescript
 const schema = z.object({
+  // Type constraints
   integer: z.number().int(),           // Generates integers
+  float: z.number(),                   // Generates floats
+  
+  // Range constraints
   positive: z.number().positive(),     // Generates positive numbers
-  range: z.number().min(1).max(100),   // Respects min/max constraints
-  intRange: z.number().int().min(1).max(10), // Integer within range
+  negative: z.number().negative(),     // Generates negative numbers
+  nonpositive: z.number().nonpositive(), // Generates <= 0
+  nonnegative: z.number().nonnegative(), // Generates >= 0
+  
+  // Min/Max constraints
+  range: z.number().min(1).max(100),   // Respects min/max
+  gte: z.number().gte(10),            // Greater than or equal
+  lte: z.number().lte(50),            // Less than or equal
+  
+  // Special constraints
+  multipleOf: z.number().multipleOf(5), // Generates multiples
+  finite: z.number().finite(),         // No Infinity/-Infinity
 });
 ```
 
@@ -93,448 +179,372 @@ const schema = z.object({
 #### Objects
 
 ```typescript
-const UserSchema = z.object({
-  name: z.string(),
-  age: z.number(),
-  address: z.object({
-    street: z.string(),
-    city: z.string(),
-    zipCode: z.string(),
-  }),
+const AddressSchema = z.object({
+  street: z.string(),
+  city: z.string(),
+  zipCode: z.string().regex(/^\d{5}$/),
+  country: z.string()
 });
 
-const factory = createFactoryFromZod(UserSchema);
-const user = factory.build();
+const UserSchema = z.object({
+  name: z.string(),
+  age: z.number().int().min(0).max(120),
+  address: AddressSchema,  // Nested object
+  isActive: z.boolean()
+});
+
+const factory = new ZodFactory(UserSchema);
 ```
 
 #### Arrays
 
 ```typescript
 const schema = z.object({
-  tags: z.array(z.string()),                    // Array of strings
-  numbers: z.array(z.number()).min(2).max(5),   // Array with length constraints
-  users: z.array(UserSchema),                   // Array of complex objects
+  // Basic array
+  tags: z.array(z.string()),
+  
+  // With length constraints
+  items: z.array(z.number()).min(1).max(5),
+  
+  // Exact length
+  coordinates: z.array(z.number()).length(2),
+  
+  // Non-empty
+  requiredTags: z.array(z.string()).nonempty(),
 });
 ```
 
-#### Records
+#### Tuples
 
 ```typescript
 const schema = z.object({
-  metadata: z.record(z.string()),        // Record with string values
-  settings: z.record(z.boolean()),       // Record with boolean values
-  config: z.record(z.string(), z.number()), // Record with specific key/value types
+  // Fixed tuple
+  point: z.tuple([z.number(), z.number()]),
+  
+  // With rest elements
+  data: z.tuple([z.string(), z.number()]).rest(z.boolean()),
 });
 ```
 
-### Union Types
+#### Unions and Discriminated Unions
 
 ```typescript
-const MediaSchema = z.union([
-  z.object({
-    type: z.literal('image'),
-    url: z.string().url(),
-    alt: z.string(),
-  }),
-  z.object({
-    type: z.literal('video'),
-    url: z.string().url(),
-    duration: z.number(),
-  }),
+// Regular union
+const StatusSchema = z.union([
+  z.literal('pending'),
+  z.literal('approved'),
+  z.literal('rejected')
 ]);
 
-const factory = createFactoryFromZod(MediaSchema);
-const media = factory.build(); // Will be either image or video
+// Discriminated union
+const NotificationSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('email'),
+    to: z.string().email(),
+    subject: z.string(),
+    body: z.string()
+  }),
+  z.object({
+    type: z.literal('sms'),
+    to: z.string().regex(/^\+\d{10,15}$/),
+    message: z.string().max(160)
+  }),
+  z.object({
+    type: z.literal('push'),
+    deviceToken: z.string(),
+    title: z.string(),
+    body: z.string()
+  })
+]);
+
+const factory = new ZodFactory(z.object({
+  status: StatusSchema,
+  notification: NotificationSchema
+}));
 ```
 
-### Intersection Types
+#### Enums
 
 ```typescript
-const BaseSchema = z.object({
-  id: z.string(),
-  createdAt: z.date(),
-});
+// Zod enum
+const RoleSchema = z.enum(['admin', 'user', 'guest']);
 
-const UserSchema = z.object({
-  name: z.string(),
-  email: z.string().email(),
-});
+// Native enum
+enum Status {
+  Active = 'ACTIVE',
+  Inactive = 'INACTIVE',
+  Pending = 'PENDING'
+}
+const StatusSchema = z.nativeEnum(Status);
 
-const UserWithBaseSchema = z.intersection(BaseSchema, UserSchema);
-const factory = createFactoryFromZod(UserWithBaseSchema);
+const factory = new ZodFactory(z.object({
+  role: RoleSchema,
+  status: StatusSchema
+}));
 ```
 
-### Optional and Nullable Types
+#### Records and Maps
 
 ```typescript
 const schema = z.object({
-  required: z.string(),
-  optional: z.string().optional(),     // 70% chance to be generated
-  nullable: z.string().nullable(),     // 80% chance to be generated, 20% null
+  // Record with string keys
+  metadata: z.record(z.string(), z.unknown()),
+  
+  // Record with specific key pattern
+  scores: z.record(z.string().regex(/^player_\d+$/), z.number()),
+  
+  // Map type
+  cache: z.map(z.string(), z.any()),
 });
 ```
 
-### Enums and Literals
+#### Sets
 
 ```typescript
 const schema = z.object({
-  status: z.enum(['active', 'inactive', 'pending']),
-  type: z.literal('user'),
-  priority: z.union([z.literal('low'), z.literal('medium'), z.literal('high')]),
+  // Basic set
+  uniqueTags: z.set(z.string()),
+  
+  // With size constraints
+  limitedSet: z.set(z.number()).min(1).max(5),
 });
 ```
 
-## Configuration Options
+### Special Types
+
+#### Optional and Nullable
+
+```typescript
+const schema = z.object({
+  // Optional field (can be undefined)
+  middleName: z.string().optional(),
+  
+  // Nullable field (can be null)
+  deletedAt: z.date().nullable(),
+  
+  // Both optional and nullable
+  nickname: z.string().optional().nullable(),
+});
+```
+
+#### Default Values
+
+```typescript
+const schema = z.object({
+  // Will use default if not provided
+  role: z.enum(['user', 'admin']).default('user'),
+  credits: z.number().default(100),
+  tags: z.array(z.string()).default([]),
+});
+```
+
+#### Transformations
+
+```typescript
+const schema = z.object({
+  // Note: Transformations are applied after generation
+  email: z.string().email().transform(str => str.toLowerCase()),
+  tags: z.array(z.string()).transform(arr => [...new Set(arr)]),
+});
+```
+
+#### Refinements
+
+```typescript
+const schema = z.object({
+  password: z.string().min(8),
+  confirmPassword: z.string()
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
+});
+
+// ZodFactory will generate valid data that passes refinements
+```
+
+## Advanced Features
 
 ### Custom Generators
 
-You can provide custom generators for specific schema fields using the `describe()` method:
+You can register custom generators for specific field types:
 
 ```typescript
-const ProductSchema = z.object({
-  id: z.string().describe('productId'),
-  name: z.string(),
-  category: z.string().describe('categoryName'),
+const UserSchema = z.object({
+  id: z.string().describe('userId'),  // Use describe to tag fields
+  email: z.string().email().describe('customEmail'),
+  score: z.number().describe('gameScore')
 });
 
-const factory = createFactoryFromZod(ProductSchema, {
-  customGenerators: {
-    productId: () => `PROD-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-    categoryName: () => {
-      const categories = ['Electronics', 'Clothing', 'Books'];
-      return categories[Math.floor(Math.random() * categories.length)];
-    },
-  },
-});
-```
-
-### Locale and Randomizer Options
-
-```typescript
-import { de } from '@faker-js/faker';
-
-const factory = createFactoryFromZod(schema, {
-  locale: de,                    // Use German locale
-  randomizer: customRandomizer,  // Use custom randomizer
-});
-```
-
-## Factory Methods
-
-The generated factory supports all the standard Factory methods:
-
-### build()
-
-Generate a single instance:
-
-```typescript
-const user = UserFactory.build();
-const userWithOverrides = UserFactory.build({ name: 'John Doe' });
-```
-
-### batch()
-
-Generate multiple instances:
-
-```typescript
-const users = UserFactory.batch(10);
-const usersWithOverrides = UserFactory.batch(5, { isActive: true });
-const usersWithIndividualOverrides = UserFactory.batch(3, [
-  { name: 'Alice' },
-  { name: 'Bob' },
-  { name: 'Charlie' },
-]);
-```
-
-### iterate() and sample()
-
-Use the factory's built-in iteration and sampling methods:
-
-```typescript
-const statusGenerator = UserFactory.iterate(['active', 'inactive']);
-const randomStatusGenerator = UserFactory.sample(['active', 'inactive', 'pending']);
-```
-
-## Advanced Examples
-
-### Custom Zod Type Registration
-
-Interface-forge supports registering custom handlers for extended Zod types from third-party packages. This is useful when you're using packages that extend Zod with custom types.
-
-#### Registering Custom Types
-
-```typescript
-import { z } from 'zod';
-import { registerZodType, createFactoryFromZod } from 'interface-forge/zod';
-
-// Register a handler for BigInt
-registerZodType('ZodBigInt', (schema, factory) => {
-  return BigInt(factory.number.int({ min: 0, max: 1000000 }));
-});
-
-// Register a handler for custom validation
-registerZodType('ZodNaN', (schema, factory) => {
-  return NaN;
-});
-
-// Register a handler for functions
-registerZodType('ZodFunction', (schema, factory) => {
-  // Return a mock function
-  return (input: any) => factory.lorem.word();
-});
-
-// Register a handler for Promises
-registerZodType('ZodPromise', (schema, factory) => {
-  const zodType = schema._def as Record<string, unknown>;
-  const innerType = zodType.type as any;
-  const innerValue = generateFactorySchema(innerType, factory, {});
-  return Promise.resolve(innerValue);
-});
-```
-
-#### Third-Party Package Integration
-
-For packages like `zod-openapi`, `zod-form-data`, etc.:
-
-```typescript
-import { z } from 'zod';
-import { extendZod } from 'zod-openapi'; // Example third-party package
-import { registerZodType, createFactoryFromZod } from 'interface-forge/zod';
-
-// Extend Zod with OpenAPI
-const zodWithOpenApi = extendZod(z);
-
-// Register a handler for the OpenAPI extension
-registerZodType('ZodOpenApi', (schema, factory, config) => {
-  const zodType = schema._def as Record<string, unknown>;
-  
-  // Extract the underlying Zod type
-  const baseType = zodType.innerType || zodType.type;
-  
-  // Generate based on the underlying type
-  if (baseType) {
-    return generateFactorySchema(baseType, factory, config);
+const factory = new ZodFactory(UserSchema, {
+  generators: {
+    userId: () => `USR_${Date.now()}`,
+    customEmail: () => `test_${Date.now()}@example.com`,
+    gameScore: () => Math.floor(Math.random() * 1000)
   }
-  
-  // Fallback to a default value
-  return factory.lorem.word();
-});
-
-// Now you can use extended schemas
-const OpenApiSchema = zodWithOpenApi.object({
-  id: zodWithOpenApi.string().openapi({ example: 'user-123' }),
-  name: zodWithOpenApi.string().openapi({ description: 'User name' }),
-});
-
-const factory = createFactoryFromZod(OpenApiSchema);
-const user = factory.build();
-```
-
-#### Available Registration Functions
-
-```typescript
-import { 
-  registerZodType, 
-  unregisterZodType, 
-  getRegisteredZodTypes, 
-  clearZodTypeRegistry 
-} from 'interface-forge/zod';
-
-// Register a custom type
-registerZodType('MyCustomType', (schema, factory, config) => {
-  return 'custom-value';
-});
-
-// Get all registered types
-const registeredTypes = getRegisteredZodTypes();
-console.log(registeredTypes); // ['ZodBigInt', 'ZodNaN', 'MyCustomType', ...]
-
-// Unregister a type
-const wasRemoved = unregisterZodType('MyCustomType');
-console.log(wasRemoved); // true
-
-// Clear all registered types (useful for testing)
-clearZodTypeRegistry();
-```
-
-#### Built-in Extended Types
-
-Interface-forge comes with handlers for these extended Zod types:
-
-- **ZodBigInt** - Generates random BigInt values
-- **ZodNaN** - Returns NaN
-- **ZodVoid** - Returns undefined  
-- **ZodNever** - Throws an error (as expected)
-- **ZodFunction** - Returns a mock function that generates random values
-- **ZodPromise** - Returns a Promise resolving to the inner type
-- **ZodLazy** - Resolves lazy schemas and generates for the resolved type
-
-#### TypeScript Support
-
-The registration system is fully typed:
-
-```typescript
-import type { ZodTypeHandler } from 'interface-forge/zod';
-
-const myHandler: ZodTypeHandler = (schema, factory, config) => {
-  // schema: ZodSchema (the Zod schema instance)
-  // factory: Factory<unknown> (the factory instance for generating data)
-  // config: ZodFactoryConfig (the factory configuration)
-  
-  return 'my-custom-value';
-};
-
-registerZodType('MyType', myHandler);
-```
-
-### Nested Schemas with References
-
-```typescript
-const AddressSchema = z.object({
-  street: z.string(),
-  city: z.string(),
-  country: z.string(),
-});
-
-const UserSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string(),
-  email: z.string().email(),
-  address: AddressSchema,
-  workAddress: AddressSchema.optional(),
-});
-
-const CompanySchema = z.object({
-  name: z.string(),
-  employees: z.array(UserSchema).min(1).max(50),
-  headquarters: AddressSchema,
-});
-
-const CompanyFactory = createFactoryFromZod(CompanySchema);
-const company = CompanyFactory.build();
-```
-
-### Complex Validation Rules
-
-```typescript
-const OrderSchema = z.object({
-  id: z.string().uuid(),
-  items: z.array(z.object({
-    productId: z.string(),
-    quantity: z.number().int().min(1),
-    price: z.number().positive(),
-  })).min(1),
-  total: z.number().positive(),
-  status: z.enum(['pending', 'processing', 'shipped', 'delivered']),
-  shippingAddress: AddressSchema,
-  billingAddress: AddressSchema.optional(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-}).refine(data => data.updatedAt >= data.createdAt, {
-  message: "Updated date must be after created date",
-});
-
-const OrderFactory = createFactoryFromZod(OrderSchema);
-```
-
-## Type Safety
-
-The generated factories are fully type-safe and will infer the correct TypeScript types from your Zod schemas:
-
-```typescript
-const UserSchema = z.object({
-  name: z.string(),
-  age: z.number(),
-});
-
-const UserFactory = createFactoryFromZod(UserSchema);
-
-// TypeScript knows this is { name: string; age: number }
-const user = UserFactory.build();
-
-// TypeScript will enforce correct override types
-const userWithOverrides = UserFactory.build({
-  name: 'John',  // ✅ string is correct
-  age: 25,       // ✅ number is correct
-  // invalid: true  // ❌ TypeScript error: property doesn't exist
 });
 ```
 
-## Performance Considerations
+### Working with Recursive Schemas
 
-- The factory generation is done once when `createFactoryFromZod` is called
-- Subsequent `build()` and `batch()` calls are optimized for performance
-- Complex schemas with deep nesting may take longer to generate
-- Consider caching factories for frequently used schemas
-- Custom type handlers are called for each generation, so keep them lightweight
-
-## Limitations
-
-- Regex patterns have limited support (basic email detection)
-- Custom Zod refinements and transformations are not executed during generation
-- Some advanced Zod features may not be fully supported
-- Circular references in schemas are not handled
-
-## Migration from Manual Factories
-
-If you have existing manual factories, you can gradually migrate to Zod-based factories:
+For recursive or self-referential schemas, use the `maxDepth` option to control generation:
 
 ```typescript
-// Before: Manual factory
-const UserFactory = new Factory<User>((factory) => ({
-  id: factory.string.uuid(),
-  name: factory.person.firstName(),
-  email: factory.internet.email(),
-  age: factory.number.int({ min: 18, max: 65 }),
+interface Comment {
+  id: string;
+  text: string;
+  replies: Comment[];
+}
+
+const CommentSchema: z.ZodType<Comment> = z.lazy(() =>
+  z.object({
+    id: z.string().uuid(),
+    text: z.string(),
+    replies: z.array(CommentSchema)
+  })
+);
+
+// Limit recursion depth to prevent infinite generation
+const factory = new ZodFactory(
+  z.object({ comments: z.array(CommentSchema) }),
+  { maxDepth: 3 }
+);
+```
+
+### Using Hooks
+
+ZodFactory supports the same hooks as the base Factory class:
+
+```typescript
+const factory = new ZodFactory(UserSchema)
+  .beforeBuild((params) => {
+    // Modify params before building
+    return {
+      ...params,
+      createdAt: new Date('2024-01-01')
+    };
+  })
+  .afterBuild((user) => {
+    // Post-process the generated user
+    console.log('Generated user:', user.id);
+    return user;
+  });
+```
+
+### Async Factory Functions
+
+For async operations, use `buildAsync`:
+
+```typescript
+const factory = new ZodFactory(UserSchema, async (faker) => ({
+  name: faker.person.fullName(),
+  avatarUrl: await fetchRandomAvatar(),
 }));
 
-// After: Zod-based factory
-const UserSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string(),
-  email: z.string().email(),
-  age: z.number().int().min(18).max(65),
-});
-
-const UserFactory = createFactoryFromZod(UserSchema);
+const user = await factory.buildAsync();
 ```
 
-## Best Practices
+## Examples
 
-1. **Define schemas first**: Create your Zod schemas for validation, then generate factories
-2. **Use descriptive names**: Use `.describe()` for fields that need custom generators
-3. **Leverage constraints**: Use Zod's built-in constraints for realistic test data
-4. **Cache factories**: Store factory instances to avoid recreation overhead
-5. **Register custom types early**: Set up custom type handlers before creating factories
-6. **Combine with existing factories**: Use Zod factories alongside manual factories as needed
-
-## Troubleshooting
-
-### Common Issues
-
-**Issue**: Generated data doesn't match expected format
-**Solution**: Check your Zod schema constraints and add custom generators if needed
-
-**Issue**: TypeScript errors with complex schemas
-**Solution**: Ensure your Zod schema is properly typed and consider breaking down complex schemas
-
-**Issue**: Performance issues with large schemas
-**Solution**: Consider using simpler schemas for testing or implement custom generators for expensive operations
-
-**Issue**: Unknown Zod type warnings
-**Solution**: Register a custom handler using `registerZodType()` for third-party Zod extensions
-
-### Debug Mode
-
-Enable debug logging to see what's being generated:
+### Testing Example
 
 ```typescript
-const factory = createFactoryFromZod(schema, {
-  customGenerators: {
-    debug: () => {
-      console.log('Generating debug field');
-      return 'debug-value';
-    },
-  },
+import { z } from 'zod/v4';
+import { ZodFactory } from 'interface-forge/zod';
+
+// Define your domain schema
+const ProductSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(3).max(100),
+  price: z.number().positive().multipleOf(0.01),
+  inStock: z.boolean(),
+  category: z.enum(['electronics', 'clothing', 'food']),
+  tags: z.array(z.string()).default([])
 });
-``` 
+
+// Create test factory
+const productFactory = new ZodFactory(ProductSchema, (faker) => ({
+  name: faker.commerce.productName(),
+  price: Number(faker.commerce.price()),
+  // Other fields auto-generated
+}));
+
+describe('Product Service', () => {
+  it('should create a product', async () => {
+    const testProduct = productFactory.build({
+      inStock: true,
+      category: 'electronics'
+    });
+    
+    const result = await productService.create(testProduct);
+    expect(result.id).toBeDefined();
+  });
+  
+  it('should handle multiple products', async () => {
+    const products = productFactory.batch(10);
+    const results = await productService.bulkCreate(products);
+    expect(results).toHaveLength(10);
+  });
+});
+```
+
+### API Response Mocking
+
+```typescript
+const ApiResponseSchema = z.object({
+  success: z.boolean(),
+  data: z.object({
+    users: z.array(UserSchema),
+    total: z.number().int().nonnegative(),
+    page: z.number().int().positive(),
+    pageSize: z.number().int().positive()
+  }).nullable(),
+  error: z.object({
+    code: z.string(),
+    message: z.string()
+  }).nullable(),
+  timestamp: z.string().datetime()
+});
+
+const apiFactory = new ZodFactory(ApiResponseSchema, (faker) => ({
+  timestamp: new Date().toISOString(),
+}));
+
+// Generate success response
+const successResponse = apiFactory.build({
+  success: true,
+  error: null
+});
+
+// Generate error response
+const errorResponse = apiFactory.build({
+  success: false,
+  data: null,
+  error: {
+    code: 'USER_NOT_FOUND',
+    message: 'The requested user does not exist'
+  }
+});
+```
+
+## Migration from createFactoryFromZod
+
+If you were using the older `createFactoryFromZod` function, migrate to the new `ZodFactory` class:
+
+```typescript
+// Old API (deprecated)
+import { createFactoryFromZod } from 'interface-forge/zod';
+const factory = createFactoryFromZod(schema);
+
+// New API
+import { ZodFactory } from 'interface-forge/zod';
+const factory = new ZodFactory(schema);
+```
+
+The new API provides better TypeScript support, partial factory functions, and all the features of the base Factory class.
+
+## See Also
+
+- [Basic Example](https://github.com/goldziher/interface-forge/blob/main/examples/07-zod-basic.ts)
+- [Advanced Example](https://github.com/goldziher/interface-forge/blob/main/examples/07-zod-integration.ts)
+- [Testing Example](https://github.com/goldziher/interface-forge/blob/main/examples/07-zod-testing.ts)
+- [Main Documentation](https://github.com/goldziher/interface-forge#readme)

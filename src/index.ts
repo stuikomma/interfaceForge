@@ -21,10 +21,12 @@ export { Ref } from './utils';
 export type FactoryComposition<T> = {
     [K in keyof T]?: Factory<T[K]> | T[K];
 };
+
 export type FactoryFunction<T> = (
     factory: Factory<T>,
     iteration: number,
 ) => FactorySchema<T> | Promise<FactorySchema<T>>;
+
 export interface FactoryOptions {
     locale?: LocaleDefinition | LocaleDefinition[];
 

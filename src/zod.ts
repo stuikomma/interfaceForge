@@ -89,8 +89,29 @@ import {
     isObject,
 } from '@tool-belt/type-predicates';
 import { $ZodLazy } from 'zod/dist/types/v4/core/schemas';
+import { PartialFactoryFunction } from './types';
 
+/**
+ * Options for configuring ZodFactory behavior.
+ *
+ */
 export interface ZodFactoryOptions extends FactoryOptions {
+    /**
+     * Custom generator functions for specific field types.
+     *
+     * Generators are matched by the field's description metadata.
+     *
+     * @example
+     * ```typescript
+     * const factory = new ZodFactory(schema, {
+     *   generators: {
+     *     // Schema field must have .describe('userId')
+     *     userId: () => `USR_${Date.now()}`,
+     *     customEmail: () => `test_${Date.now()}@example.com`
+     *   }
+     * });
+     * ```
+     */
     generators?: Record<string, () => unknown>;
 }
 
@@ -1095,11 +1116,47 @@ class ZodSchemaGenerator {
 }
 
 /**
- * A factory class for generating type-safe mock data from Zod object schemas.
- * This factory is specifically designed to work with ZodObject schemas only.
+ * A factory class for generating type-safe mock data from Zod schemas.
  *
- * @template T - Must be a ZodObject type
+ * ZodFactory extends the base Factory class to provide automatic generation of mock data
+ * that conforms to Zod schema definitions. It supports all major Zod types including
+ * primitives, objects, arrays, unions, enums, and more.
+ *
+ * Note: This class requires the `zod` package to be installed and uses Zod v4 API.
+ *
+ * @example
+ * Basic usage with a simple schema:
+ * ```typescript
+ * import { z } from 'zod/v4';
+ * import { ZodFactory } from 'interface-forge/zod';
+ *
+ * const UserSchema = z.object({
+ *   id: z.string().uuid(),
+ *   name: z.string().min(1).max(100),
+ *   email: z.string().email(),
+ *   age: z.number().int().min(18).max(120)
+ * });
+ *
+ * const factory = new ZodFactory(UserSchema);
+ * const user = factory.build();
+ * ```
+ *
+ * @example
+ * Using partial factory functions for custom generation:
+ * ```typescript
+ * const factory = new ZodFactory(UserSchema, (faker) => ({
+ *   // Only customize specific fields
+ *   name: faker.person.fullName(),
+ *   // Other fields are auto-generated from schema
+ * }));
+ * ```
+ *
+ * @template T - Must be a ZodObject type that defines the schema shape
  * @template O - Factory options extending ZodFactoryOptions
+ *
+ * @see {@link https://github.com/goldziher/interface-forge/blob/main/examples/07-zod-basic.ts | Basic Example}
+ * @see {@link https://github.com/goldziher/interface-forge/blob/main/examples/07-zod-integration.ts | Advanced Example}
+ * @see {@link https://github.com/goldziher/interface-forge/blob/main/examples/07-zod-testing.ts | Testing Example}
  */
 export class ZodFactory<
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1109,24 +1166,52 @@ export class ZodFactory<
     private readonly generator: ZodSchemaGenerator;
     private readonly schema: T;
 
+    /**
+     * Creates a new ZodFactory instance.
+     *
+     * @param schema - The Zod object schema to generate data from
+     * @param optionsOrFactory - Either factory options or a partial factory function
+     * @param options - Factory options (when second parameter is a factory function)
+     *
+     * @example
+     * Simple schema-based generation:
+     * ```typescript
+     * const factory = new ZodFactory(UserSchema);
+     * ```
+     *
+     * @example
+     * With partial factory function:
+     * ```typescript
+     * const factory = new ZodFactory(UserSchema, (faker) => ({
+     *   name: faker.person.fullName(),
+     *   // Other fields auto-generated
+     * }));
+     * ```
+     *
+     * @example
+     * With options:
+     * ```typescript
+     * const factory = new ZodFactory(UserSchema, {
+     *   maxDepth: 3,
+     *   generators: { userId: () => 'custom-id' }
+     * });
+     * ```
+     */
     constructor(
         schema: T,
-        optionsOrFactory?: FactoryFunction<z.output<T>> | O,
+        optionsOrFactory?: O | PartialFactoryFunction<z.output<T>>,
         options?: O,
     ) {
-        const defaultFactory: FactoryFunction<z.output<T>> = () =>
-            ({}) as z.output<T>;
-
         const factoryFunction = isFunction(optionsOrFactory)
-            ? (optionsOrFactory as FactoryFunction<z.output<T>>)
-            : defaultFactory;
+            ? optionsOrFactory
+            : ((() => ({})) as PartialFactoryFunction<z.output<T>>);
         const factoryOptions = isObject(options)
             ? options
             : isObject(optionsOrFactory) && !isFunction(optionsOrFactory)
               ? (optionsOrFactory as O)
               : ({} as O);
 
-        super(factoryFunction, factoryOptions);
+        super(factoryFunction as FactoryFunction<z.output<T>>, factoryOptions);
 
         this.schema = schema;
         this.generator = new ZodSchemaGenerator(
@@ -1134,6 +1219,13 @@ export class ZodFactory<
         );
     }
 
+    /**
+     * Generates a batch of instances that conform to the Zod schema.
+     *
+     * @param size - Number of instances to generate
+     * @param kwargs - Optional overrides for each instance
+     * @returns Array of generated instances
+     */
     batch = (
         size: number,
         kwargs?: Partial<z.output<T>> | Partial<z.output<T>>[],
@@ -1193,6 +1285,26 @@ export class ZodFactory<
         return results;
     };
 
+    /**
+     * Builds a single instance that conforms to the Zod schema.
+     *
+     * The build process:
+     * 1. Generates data from the Zod schema constraints
+     * 2. Applies any factory function customizations
+     * 3. Applies the provided overrides
+     * 4. Validates the result against the schema
+     *
+     * @param kwargs - Optional property overrides
+     * @returns A generated instance conforming to the schema
+     *
+     * @example
+     * ```typescript
+     * const user = factory.build({
+     *   role: 'admin',
+     *   isActive: true
+     * });
+     * ```
+     */
     build = (kwargs?: Partial<z.output<T>>): z.output<T> => {
         if (isAsyncFunction(this.factory)) {
             throw new ConfigurationError(
