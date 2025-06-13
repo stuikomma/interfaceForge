@@ -26,5 +26,6 @@
         "notExported": true,
         "invalidLink": true,
         "notDocumented": false
-    }
+    },
+    "favicon": "./assets/favicon.ico"
 }

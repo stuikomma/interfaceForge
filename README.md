@@ -1,11 +1,18 @@
-# Interface-Forge
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Goldziher/interface-forge/main/assets/logo.svg" alt="Interface-Forge Logo" width="120" height="120">
+  
+  # Interface-Forge
 
 [![npm version](https://img.shields.io/npm/v/interface-forge.svg)](https://www.npmjs.com/package/interface-forge)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org/)
 [![Downloads](https://img.shields.io/npm/dm/interface-forge.svg)](https://www.npmjs.com/package/interface-forge)
 
+</div>
+
 Interface-Forge is a TypeScript library for creating strongly typed mock data factories. Built on top of [Faker.js](https://fakerjs.dev/), it provides a powerful `Factory` class that combines Faker's data generation capabilities with TypeScript's type safety, advanced composition patterns, and optional [Zod](https://zod.dev/) schema integration.
+
+📚 **[View Full Documentation](https://goldziher.github.io/interface-forge/)**
 
 ## Why Interface-Forge?
 
@@ -17,8 +24,6 @@ Interface-Forge is a TypeScript library for creating strongly typed mock data fa
 - **📐 Zod Integration**: Generate mock data directly from your Zod schemas with automatic type inference
 - **🔗 Hooks & Transforms**: Use `beforeBuild` and `afterBuild` hooks to transform data, validate business rules, or fetch async data
 - **🎲 Deterministic Mode**: Seed your factories for reproducible test data across runs
-
-📚 **[View Full API Documentation](https://goldziher.github.io/interface-forge/)**
 
 📂 **[Browse Example Code](./examples)** - See Interface-Forge in action with practical examples
 
