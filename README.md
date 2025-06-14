@@ -86,7 +86,7 @@ yarn add zod
 pnpm add zod
 ```
 
-**Note**: The ZodFactory uses Zod v4 API which is included in the standard Zod v3 package. No additional installation is required.
+**Note**: ZodFactory supports both Zod v3 and v4. Install your preferred version - both are fully compatible with Interface-Forge.
 
 ## Basic Example
 
@@ -570,12 +570,21 @@ For more information about available Faker.js methods, see the [Faker.js documen
 
 Interface-Forge provides seamless integration with [Zod](https://zod.dev/) schemas through the `ZodFactory` class. This allows you to generate mock data that automatically conforms to your Zod schema definitions.
 
-**Important**: The ZodFactory uses Zod v4 API which is available within the Zod v3 package. When importing Zod types, use `import { z } from 'zod/v4'` to access the v4 API.
+**Zod Version Support**: ZodFactory supports both Zod v3 and Zod v4 schemas automatically. The factory detects the schema version and handles the differences transparently:
+
+- **Zod v3**: Import schemas with `import { z } from 'zod'`
+- **Zod v4**: Import schemas with `import { z } from 'zod/v4'`
+
+Both versions work with the same ZodFactory API, so you can use existing v3 schemas without modification while also supporting newer v4 features.
 
 ### Basic Zod Usage
 
 ```typescript
-import { z } from 'zod/v4'; // Note: Using Zod v4 API
+// Works with both Zod v3 and v4
+import { z } from 'zod'; // For Zod v3
+// OR
+import { z } from 'zod/v4'; // For Zod v4
+
 import { ZodFactory } from 'interface-forge/zod';
 
 const UserSchema = z.object({
@@ -597,7 +606,7 @@ const user = userFactory.build();
 The `ZodFactory` supports **partial factory functions**, allowing you to customize only specific fields while automatically generating the rest from the schema:
 
 ```typescript
-import { z } from 'zod/v4';
+import { z } from 'zod'; // Works with both v3 and v4
 import { ZodFactory } from 'interface-forge/zod';
 
 const UserSchema = z.object({
