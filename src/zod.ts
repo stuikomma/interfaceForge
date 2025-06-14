@@ -89,6 +89,7 @@ import {
 } from '@tool-belt/type-predicates';
 import { PartialFactoryFunction } from './types';
 import { DEFAULT_MAX_DEPTH } from './constants';
+import { merge } from './utils';
 
 const hasProperty = <T extends PropertyKey>(
     obj: unknown,
@@ -1209,7 +1210,7 @@ class ZodSchemaGenerator {
                 isObject(rightResult) &&
                 isNotNullish(rightResult)
             ) {
-                return { ...leftResult, ...rightResult };
+                return merge(leftResult, rightResult);
             }
             return leftResult;
         }
@@ -1888,11 +1889,11 @@ export class ZodFactory<
             typeof generatedSchema !== 'object' ||
             generatedSchema === null
                 ? generatedSchema
-                : {
-                      ...(generatedSchema as Record<string, unknown>),
-                      ...(generatedFromFactory as Record<string, unknown>),
-                      ...(params as Record<string, unknown>),
-                  };
+                : merge(
+                      generatedSchema as Record<string, unknown>,
+                      generatedFromFactory as Record<string, unknown>,
+                      params as Record<string, unknown>,
+                  );
 
         let result = this.schema.parse(merged);
 
