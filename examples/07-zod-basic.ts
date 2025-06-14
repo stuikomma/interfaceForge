@@ -1,4 +1,5 @@
-import { z } from 'zod/v4';
+// Works with both Zod v3 and v4
+import { z } from 'zod/v4'; // You can also use: import { z } from 'zod';
 import { ZodFactory } from 'interface-forge/zod';
 
 // Basic example: User registration schema

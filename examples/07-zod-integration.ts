@@ -1,4 +1,5 @@
-import { z } from 'zod/v4';
+// ZodFactory automatically supports both Zod v3 and v4
+import { z } from 'zod/v4'; // Or: import { z } from 'zod'; for v3
 import { ZodFactory } from 'interface-forge/zod';
 
 // Define a comprehensive user schema with various Zod types

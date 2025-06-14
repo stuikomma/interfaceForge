@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-misused-spread,  @typescript-eslint/unbound-method, @typescript-eslint/switch-exhaustiveness-check, @typescript-eslint/no-deprecated */
-
 import {
     z,
     ZodAny,
@@ -78,7 +76,6 @@ import type {
     $ZodCheckRegex,
     $ZodChecks,
     $ZodCheckStringFormat,
-    $ZodObjectDef,
     $ZodType,
 } from 'zod/v4/core';
 import { Factory, FactoryFunction, type FactoryOptions } from './index';
@@ -90,21 +87,8 @@ import {
     isNotNullish,
     isObject,
 } from '@tool-belt/type-predicates';
-import { $ZodLazy } from 'zod/dist/types/v4/core/schemas';
 import { PartialFactoryFunction } from './types';
 import { DEFAULT_MAX_DEPTH } from './constants';
-
-// Helper types for Zod v3/v4 compatibility
-interface ZodV3Schema {
-    _def: unknown;
-}
-
-interface ZodV4Schema {
-    _zod: {
-        [key: string]: unknown;
-        def: unknown;
-    };
-}
 
 const hasProperty = <T extends PropertyKey>(
     obj: unknown,
@@ -143,7 +127,9 @@ const schemaHelpers = {
      */
     getArrayElement(schema: ZodArray): undefined | ZodType {
         const def = schemaHelpers.getDef(schema);
-        return getProperty(def, ['type']) as undefined | ZodType;
+        return (getProperty(def, ['element']) ?? getProperty(def, ['type'])) as
+            | undefined
+            | ZodType;
     },
 
     /**
@@ -153,7 +139,6 @@ const schemaHelpers = {
      * @returns The check format or undefined
      */
     getCheckFormat(check: $ZodChecks): string | undefined {
-        // Try v4 format first
         const v4Format = getProperty(check, ['_zod', 'def', 'format']) as
             | string
             | undefined;
@@ -161,7 +146,15 @@ const schemaHelpers = {
             return v4Format;
         }
 
-        // Fallback to v3 format
+        const v3Kind = getProperty(check, ['kind']) as string | undefined;
+        if (
+            v3Kind &&
+            ['cuid', 'cuid2', 'email', 'regex', 'ulid', 'url', 'uuid'].includes(
+                v3Kind,
+            )
+        ) {
+            return v3Kind;
+        }
         return getProperty(check, ['format']) as string | undefined;
     },
 
@@ -173,7 +166,7 @@ const schemaHelpers = {
      */
     getChecks(schema: ZodType): $ZodChecks[] {
         const def = schemaHelpers.getDef(schema);
-        return (getProperty(def, ['checks']) as $ZodChecks[]) || [];
+        return (getProperty(def, ['checks']) as $ZodChecks[] | undefined) ?? [];
     },
 
     /**
@@ -183,7 +176,6 @@ const schemaHelpers = {
      * @returns The check type or undefined
      */
     getCheckType(check: $ZodChecks): string | undefined {
-        // Try v4 check type first
         const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
             | string
             | undefined;
@@ -191,7 +183,6 @@ const schemaHelpers = {
             return v4CheckType;
         }
 
-        // Fallback to v3 kind
         return getProperty(check, ['kind']) as string | undefined;
     },
 
@@ -202,7 +193,6 @@ const schemaHelpers = {
      * @returns The check value
      */
     getCheckValue(check: $ZodChecks): unknown {
-        // Try v4 value properties first
         const v4Value = getProperty(check, ['_zod', 'def', 'value']);
         if (v4Value !== undefined) {
             return v4Value;
@@ -223,7 +213,6 @@ const schemaHelpers = {
             return v4Length;
         }
 
-        // Fallback to v3 properties
         const v3Value = getProperty(check, ['value']);
         if (v3Value !== undefined) {
             return v3Value;
@@ -249,13 +238,11 @@ const schemaHelpers = {
      * @returns The schema definition
      */
     getDef(schema: ZodType | ZodV3Type): unknown {
-        // Try v4 structure first
         const v4Def = getProperty(schema, ['_zod', 'def']);
         if (v4Def !== undefined) {
             return v4Def;
         }
 
-        // Fallback to v3 structure
         return getProperty(schema, ['_def']);
     },
 
@@ -265,9 +252,18 @@ const schemaHelpers = {
      * @param schema
      * @returns Array of enum values
      */
-    getEnumValues(schema: ZodEnum): string[] {
+    getEnumValues(schema: ZodEnum): unknown[] {
         const def = schemaHelpers.getDef(schema);
-        return (getProperty(def, ['values']) as string[]) || [];
+        const v4Entries = getProperty(def, ['entries']) as
+            | Record<string, unknown>
+            | undefined;
+        if (v4Entries) {
+            const values = Object.entries(v4Entries)
+                .filter(([key]) => Number.isNaN(Number(key)))
+                .map(([, value]) => value);
+            return values.length > 0 ? values : Object.values(v4Entries);
+        }
+        return (getProperty(def, ['values']) as undefined | unknown[]) ?? [];
     },
 
     /**
@@ -289,6 +285,10 @@ const schemaHelpers = {
      */
     getLiteralValue(schema: ZodLiteral): unknown {
         const def = schemaHelpers.getDef(schema);
+        const v4Values = getProperty(def, ['values']) as undefined | unknown[];
+        if (v4Values && Array.isArray(v4Values) && v4Values.length > 0) {
+            return v4Values[0];
+        }
         return getProperty(def, ['value']);
     },
 
@@ -300,12 +300,21 @@ const schemaHelpers = {
      */
     getObjectShape(schema: ZodObject): Record<string, ZodType> | undefined {
         const def = schemaHelpers.getDef(schema);
+
         if (hasMethod(def, 'shape')) {
             return def.shape() as Record<string, ZodType>;
         }
-        return getProperty(def, ['shape']) as
-            | Record<string, ZodType>
-            | undefined;
+
+        const shape = getProperty(def, ['shape']);
+        if (shape) {
+            return shape as Record<string, ZodType>;
+        }
+
+        if (hasProperty(schema, 'shape') && isObject(schema.shape)) {
+            return schema.shape as Record<string, ZodType>;
+        }
+
+        return undefined;
     },
 
     /**
@@ -343,7 +352,7 @@ const schemaHelpers = {
      */
     getUnionOptions(schema: ZodUnion): ZodType[] {
         const def = schemaHelpers.getDef(schema);
-        return (getProperty(def, ['options']) as ZodType[]) || [];
+        return (getProperty(def, ['options']) as undefined | ZodType[]) ?? [];
     },
 
     /**
@@ -388,27 +397,25 @@ type ZodTypeHandler = (
     currentDepth: number,
 ) => unknown;
 
-// Helper to check if a schema is from Zod v3 or v4
-const hasZodV4Structure = (schema: unknown): schema is ZodV4Schema => {
+const hasZodV4Structure = (schema: unknown): schema is $ZodType => {
     return isObject(schema) && '_zod' in schema && isObject(schema._zod);
 };
 
-const hasZodV3Structure = (schema: unknown): schema is ZodV3Schema => {
+const hasZodV3Structure = (schema: unknown): schema is ZodV3Type => {
     return isObject(schema) && '_def' in schema;
 };
 
 const getSchemaTypeName = (schema: ZodType | ZodV3Type): string | undefined => {
     if (hasZodV4Structure(schema)) {
         return (
-            (schema._zod.def as { type?: string })?.type ??
-            (schema._zod.def as { typeName?: string })?.typeName
+            (schema._zod.def as { type?: string } | undefined)?.type ??
+            (schema._zod.def as { typeName?: string } | undefined)?.typeName
         );
     }
     if (hasZodV3Structure(schema)) {
-         
         return (
-            (schema._def as { type?: string })?.type ??
-            (schema._def as { typeName?: string })?.typeName
+            (schema._def as { type?: string } | undefined)?.type ??
+            (schema._def as { typeName?: string } | undefined)?.typeName
         );
     }
     return undefined;
@@ -420,20 +427,26 @@ const createZodTypeGuard = <T extends ZodType>(
 ) => {
     return createTypeGuard<T>((value: unknown): value is T => {
         try {
-            // First try instanceof check for v4
             if (value instanceof constructor) {
                 return true;
             }
 
-            // Fallback to type name checking for v3/v4 compatibility
-            if (
-                typeName &&
-                (hasZodV4Structure(value) || hasZodV3Structure(value))
-            ) {
-                const schemaTypeName = getSchemaTypeName(
-                    value as ZodType | ZodV3Type,
-                );
-                return schemaTypeName === typeName;
+            if (typeName) {
+                if (hasZodV3Structure(value)) {
+                    const v3TypeName = Reflect.get(value._def, 'typeName') as
+                        | string
+                        | undefined;
+                    if (v3TypeName === typeName) {
+                        return true;
+                    }
+                }
+
+                if (hasZodV4Structure(value)) {
+                    const schemaTypeName = getSchemaTypeName(value as ZodType);
+                    if (schemaTypeName === typeName) {
+                        return true;
+                    }
+                }
             }
 
             return false;
@@ -541,12 +554,16 @@ interface SizeConstraints {
 
 const isStringFormatCheck = createTypeGuard<$ZodCheckStringFormat>(
     (check): check is $ZodCheckStringFormat => {
-        // Handle both Zod v3 and v4 structures
         const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
             | string
             | undefined;
         const v3Kind = getProperty(check, ['kind']) as string | undefined;
-        return v4CheckType === 'string_format' || v3Kind === 'regex';
+        return (
+            v4CheckType === 'string_format' ||
+            ['cuid', 'cuid2', 'email', 'regex', 'ulid', 'url', 'uuid'].includes(
+                v3Kind ?? '',
+            )
+        );
     },
 );
 
@@ -559,9 +576,11 @@ const isRegexCheck = createTypeGuard<$ZodCheckRegex>(
             | string
             | undefined;
         const v3Kind = getProperty(check, ['kind']) as string | undefined;
+        const v3Regex = getProperty(check, ['regex']);
         return (
             (v4CheckType === 'string_format' && v4Format === 'regex') ||
-            v3Kind === 'regex'
+            v3Kind === 'regex' ||
+            v3Regex instanceof RegExp
         );
     },
 );
@@ -601,8 +620,7 @@ const isNumberFormatCheck = createTypeGuard<$ZodCheckNumberFormat>(
         const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
             | string
             | undefined;
-        const v3Kind = getProperty(check, ['kind']) as string | undefined;
-        return v4CheckType === 'number_format' || v3Kind === 'int';
+        return v4CheckType === 'number_format';
     },
 );
 
@@ -612,7 +630,11 @@ const isMaxLengthCheck = createTypeGuard<$ZodCheckMaxLength>(
             | string
             | undefined;
         const v3Kind = getProperty(check, ['kind']) as string | undefined;
-        return v4CheckType === 'max_length' || v3Kind === 'maxLength';
+        return (
+            v4CheckType === 'max_length' ||
+            v3Kind === 'maxLength' ||
+            v3Kind === 'max'
+        );
     },
 );
 
@@ -622,7 +644,11 @@ const isMinLengthCheck = createTypeGuard<$ZodCheckMinLength>(
             | string
             | undefined;
         const v3Kind = getProperty(check, ['kind']) as string | undefined;
-        return v4CheckType === 'min_length' || v3Kind === 'minLength';
+        return (
+            v4CheckType === 'min_length' ||
+            v3Kind === 'minLength' ||
+            v3Kind === 'min'
+        );
     },
 );
 
@@ -725,6 +751,7 @@ class ZodSchemaGenerator {
             const chars = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
             let ulid = '';
             for (let i = 0; i < 26; i++) {
+                // eslint-disable-next-line @typescript-eslint/no-misused-spread
                 ulid += generator.factory.helpers.arrayElement([...chars]);
             }
             return ulid;
@@ -737,6 +764,7 @@ class ZodSchemaGenerator {
             const chars = '0123456789abcdefghijklmnopqrstuv';
             let xid = '';
             for (let i = 0; i < 20; i++) {
+                // eslint-disable-next-line @typescript-eslint/no-misused-spread
                 xid += generator.factory.helpers.arrayElement([...chars]);
             }
             return xid;
@@ -804,7 +832,6 @@ class ZodSchemaGenerator {
             return 0;
         }
         if (zodTypeGuards.object(schema)) {
-            // For depth-limited objects, return empty object to satisfy the maxDepth test
             return {};
         }
         return this.factory.lorem.word();
@@ -902,26 +929,57 @@ class ZodSchemaGenerator {
     private generateArray(schema: ZodArray, currentDepth: number): unknown[] {
         const maxDepth = this.factory.options?.maxDepth ?? DEFAULT_MAX_DEPTH;
 
-        // If we're at maxDepth, return empty array (children would exceed depth)
         if (currentDepth >= maxDepth) {
             return [];
         }
 
-        const { def } = schema._zod;
-        const itemSchema = def.element;
-        const constraints = this.extractSizeConstraints(
-            def.checks as $ZodChecks[],
-        );
+        const def = schemaHelpers.getDef(schema);
+        const itemSchema = schemaHelpers.getArrayElement(schema);
+
+        const checks = getProperty(def, ['checks']) as $ZodChecks[] | undefined;
+        const constraints = this.extractSizeConstraints(checks);
+        if (constraints.exactLength === undefined) {
+            const v3ExactLength = getProperty(def, ['exactLength', 'value']) as
+                | number
+                | undefined;
+            if (v3ExactLength !== undefined) {
+                constraints.exactLength = v3ExactLength;
+            }
+        }
+        if (constraints.minLength === undefined) {
+            const v3MinLength = getProperty(def, ['minLength', 'value']) as
+                | number
+                | undefined;
+            if (v3MinLength !== undefined) {
+                constraints.minLength = v3MinLength;
+            }
+        }
+        if (constraints.maxLength === undefined) {
+            const v3MaxLength = getProperty(def, ['maxLength', 'value']) as
+                | number
+                | undefined;
+            if (v3MaxLength !== undefined) {
+                constraints.maxLength = v3MaxLength;
+            }
+        }
+
         const length = this.calculateArrayLength(constraints);
 
-        return Array.from({ length }, () =>
-            this.generateFromSchema(itemSchema as ZodType, currentDepth + 1),
-        );
+        if (!itemSchema) {
+            return [];
+        }
+
+        return Array.from({ length }, () => {
+            const generated = this.generateFromSchema(
+                itemSchema,
+                currentDepth + 1,
+            );
+            return generated;
+        });
     }
 
     private generateDate(schema: ZodDate): Date {
-        const { def } = schema._zod;
-        const checks = (def.checks as $ZodChecks[] | undefined) ?? [];
+        const checks = schemaHelpers.getChecks(schema);
 
         let minDate: Date | undefined;
         let maxDate: Date | undefined;
@@ -982,10 +1040,18 @@ class ZodSchemaGenerator {
                 return this.factory.string.alphanumeric(10);
             }
             if (source === '^[A-Z]{3}-\\d{3}$') {
-                return `${this.factory.string.alpha({ casing: 'upper', length: 3 })}-${this.factory.string.numeric({ length: 3 })}`;
+                return `${this.factory.string.alpha({
+                    casing: 'upper',
+                    length: 3,
+                })}-${this.factory.string.numeric({ length: 3 })}`;
             }
 
-            if (source === '^\\+?[\\d\\s-()]+$') {
+            if (
+                source.includes('+') &&
+                source.includes('\\d') &&
+                (source.includes('-') || source.includes('\\-')) &&
+                source.includes('(')
+            ) {
                 return `+${this.factory.string.numeric({ length: 1 })} (${this.factory.string.numeric({ length: 3 })}) ${this.factory.string.numeric({ length: 3 })}-${this.factory.string.numeric({ length: 4 })}`;
             }
 
@@ -1005,22 +1071,28 @@ class ZodSchemaGenerator {
         schema: ZodType,
         currentDepth: number,
     ): unknown {
-        const stringFormatResult = this.tryGenerateFromMapping(
-            schema,
-            zodStringFormats,
-            this.stringFormatGenerators,
-        );
-        if (stringFormatResult !== this.NOT_FOUND) {
-            return stringFormatResult;
-        }
+        const isV3String =
+            hasZodV3Structure(schema) &&
+            getSchemaTypeName(schema) === 'ZodString';
 
-        const dateFormatResult = this.tryGenerateFromMapping(
-            schema,
-            zodDateFormats,
-            this.dateFormatGenerators,
-        );
-        if (dateFormatResult !== this.NOT_FOUND) {
-            return dateFormatResult;
+        if (!isV3String) {
+            const stringFormatResult = this.tryGenerateFromMapping(
+                schema,
+                zodStringFormats,
+                this.stringFormatGenerators,
+            );
+            if (stringFormatResult !== this.NOT_FOUND) {
+                return stringFormatResult;
+            }
+
+            const dateFormatResult = this.tryGenerateFromMapping(
+                schema,
+                zodDateFormats,
+                this.dateFormatGenerators,
+            );
+            if (dateFormatResult !== this.NOT_FOUND) {
+                return dateFormatResult;
+            }
         }
 
         const primitiveResult = this.tryGenerateFromMapping(
@@ -1031,19 +1103,11 @@ class ZodSchemaGenerator {
                 date: (generator: ZodSchemaGenerator, schema: ZodDate) =>
                     generator.generateDate(schema),
                 enum: (generator: ZodSchemaGenerator, schema: ZodEnum) => {
-                    const { def } = schema._zod;
-                    const { entries } = def;
-                    // For numeric enums, filter out reverse mappings
-                    const values = Object.entries(entries)
-                        .filter(([key]) => Number.isNaN(Number(key)))
-                        .map(([, value]) => value);
-                    return generator.factory.helpers.arrayElement(
-                        values.length > 0 ? values : Object.values(entries),
-                    );
+                    const values = schemaHelpers.getEnumValues(schema);
+                    return generator.factory.helpers.arrayElement(values);
                 },
                 literal: (_: ZodSchemaGenerator, schema: ZodLiteral) => {
-                    const { def } = schema._zod;
-                    return def.values[0];
+                    return schemaHelpers.getLiteralValue(schema);
                 },
                 number: (generator: ZodSchemaGenerator, schema: ZodNumber) =>
                     generator.generateNumber(schema),
@@ -1075,57 +1139,67 @@ class ZodSchemaGenerator {
         }
 
         if (zodTypeGuards.default(schema) || zodTypeGuards.catch(schema)) {
-            const { def } = schema._zod;
-            return this.generateFromSchema(
-                def.innerType as ZodType,
-                currentDepth + 1,
-            );
+            const innerType = schemaHelpers.getInnerType(schema);
+            if (!innerType) {
+                return this.factory.lorem.word();
+            }
+            return this.generateFromSchema(innerType, currentDepth + 1);
         }
         if (zodTypeGuards.optional(schema)) {
-            const { def } = schema._zod;
+            const innerType = schemaHelpers.getInnerType(schema);
+            if (!innerType) {
+                return undefined;
+            }
             return this.factory.datatype.boolean({ probability: 0.7 })
-                ? this.generateFromSchema(
-                      def.innerType as ZodType,
-                      currentDepth + 1,
-                  )
+                ? this.generateFromSchema(innerType, currentDepth + 1)
                 : undefined;
         }
         if (zodTypeGuards.nullable(schema)) {
-            const { def } = schema._zod;
+            const innerType = schemaHelpers.getInnerType(schema);
+            if (!innerType) {
+                return null;
+            }
             return this.factory.datatype.boolean({ probability: 0.8 })
-                ? this.generateFromSchema(
-                      def.innerType as ZodType,
-                      currentDepth + 1,
-                  )
+                ? this.generateFromSchema(innerType, currentDepth + 1)
                 : null;
         }
 
         if (zodTypeGuards.union(schema)) {
-            const { def } = schema._zod;
-            const randomOption = this.factory.helpers.arrayElement(
-                def.options as ZodType[],
-            );
+            const options = schemaHelpers.getUnionOptions(schema);
+            if (options.length === 0) {
+                return this.factory.lorem.word();
+            }
+            const randomOption = this.factory.helpers.arrayElement(options);
             return this.generateFromSchema(randomOption, currentDepth + 1);
         }
         if (zodTypeGuards.discriminatedUnion(schema)) {
-            const { def } = schema._zod;
-            const { options } = def;
+            const def = schemaHelpers.getDef(schema);
+            const options = getProperty(def, ['options']) as
+                | Record<string, ZodType>
+                | undefined
+                | ZodType[];
+            if (!options) {
+                return this.factory.lorem.word();
+            }
             const optionsArray = Array.isArray(options)
                 ? options
                 : Object.values(options);
-            const randomOption = this.factory.helpers.arrayElement(
-                optionsArray,
-            ) as ZodType;
+            const randomOption =
+                this.factory.helpers.arrayElement(optionsArray);
             return this.generateFromSchema(randomOption, currentDepth + 1);
         }
         if (zodTypeGuards.intersection(schema)) {
-            const { def } = schema._zod;
-            const leftResult = this.generateFromSchema(
-                def.left as ZodType,
-                currentDepth + 1,
-            );
+            const def = schemaHelpers.getDef(schema);
+            const left = getProperty(def, ['left']) as undefined | ZodType;
+            const right = getProperty(def, ['right']) as undefined | ZodType;
+
+            if (!left || !right) {
+                return this.factory.lorem.word();
+            }
+
+            const leftResult = this.generateFromSchema(left, currentDepth + 1);
             const rightResult = this.generateFromSchema(
-                def.right as ZodType,
+                right,
                 currentDepth + 1,
             );
 
@@ -1142,12 +1216,11 @@ class ZodSchemaGenerator {
 
         if (zodTypeGuards.transform(schema) || zodTypeGuards.pipe(schema)) {
             if (zodTypeGuards.pipe(schema)) {
-                const { def } = schema._zod;
-                // For pipes, generate based on the output schema
-                return this.generateFromSchema(
-                    def.out as ZodType,
-                    currentDepth + 1,
-                );
+                const def = schemaHelpers.getDef(schema);
+                const out = getProperty(def, ['out']) as undefined | ZodType;
+                if (out) {
+                    return this.generateFromSchema(out, currentDepth + 1);
+                }
             }
 
             if (zodTypeGuards.transform(schema)) {
@@ -1168,20 +1241,21 @@ class ZodSchemaGenerator {
         schema: ZodMap,
         currentDepth: number,
     ): Map<unknown, unknown> {
-        const { def } = schema._zod;
-        const { keyType, valueType } = def;
+        const def = schemaHelpers.getDef(schema);
+        const keyType = getProperty(def, ['keyType']) as undefined | ZodType;
+        const valueType = getProperty(def, ['valueType']) as
+            | undefined
+            | ZodType;
         const map = new Map();
         const size = this.factory.number.int({ max: 5, min: 1 });
 
+        if (!keyType || !valueType) {
+            return map;
+        }
+
         for (let i = 0; i < size; i++) {
-            const key = this.generateFromSchema(
-                keyType as ZodType,
-                currentDepth + 1,
-            );
-            const value = this.generateFromSchema(
-                valueType as ZodType,
-                currentDepth + 1,
-            );
+            const key = this.generateFromSchema(keyType, currentDepth + 1);
+            const value = this.generateFromSchema(valueType, currentDepth + 1);
             map.set(key, value);
         }
 
@@ -1235,16 +1309,28 @@ class ZodSchemaGenerator {
                 ) {
                     constraints.isInt = true;
                 }
+            } else {
+                const v3Kind = getProperty(check, ['kind']) as
+                    | string
+                    | undefined;
+                if (v3Kind === 'int') {
+                    constraints.isInt = true;
+                }
             }
         }
 
         const { isInt, max, min, step } = constraints;
+
+        const hasStepWithoutMin = step && min === undefined;
+
         const safeMin =
             min !== undefined && Number.isFinite(min)
                 ? min
-                : isInt
-                  ? -1000
-                  : -1000;
+                : hasStepWithoutMin
+                  ? 0
+                  : isInt
+                    ? -1000
+                    : -1000;
         const safeMax =
             max !== undefined && Number.isFinite(max)
                 ? max
@@ -1276,6 +1362,14 @@ class ZodSchemaGenerator {
             result = Math.floor(result);
         }
 
+        if (Object.is(result, -0)) {
+            result = 0;
+        }
+
+        if (step && result === 0) {
+            result = step;
+        }
+
         return Number.isFinite(result) ? result : 0;
     }
 
@@ -1284,18 +1378,20 @@ class ZodSchemaGenerator {
         currentDepth: number,
     ): Record<string, unknown> {
         const maxDepth = this.factory.options?.maxDepth ?? DEFAULT_MAX_DEPTH;
-        const def = schemaHelpers.getDef(schema) as $ZodObjectDef;
         const result: Record<string, unknown> = {};
-        const shape = def?.shape;
 
-        // If we're at maxDepth, return empty object (children would exceed depth)
         if (currentDepth >= maxDepth) {
+            return {};
+        }
+
+        const shape = schemaHelpers.getObjectShape(schema);
+        if (!shape) {
             return {};
         }
 
         for (const [key, fieldSchema] of Object.entries(shape)) {
             result[key] = this.generateFromSchema(
-                fieldSchema as ZodType,
+                fieldSchema,
                 currentDepth + 1,
             );
         }
@@ -1307,35 +1403,40 @@ class ZodSchemaGenerator {
         schema: ZodRecord,
         currentDepth: number,
     ): Record<string, unknown> {
-        const { def } = schema._zod;
-        const { keyType, valueType } = def;
+        const def = schemaHelpers.getDef(schema);
+        const keyType = getProperty(def, ['keyType']) as undefined | ZodType;
+        const valueType = schemaHelpers.getRecordValueType(schema);
         const numKeys = this.factory.number.int({ max: 3, min: 1 });
         const result: Record<string, unknown> = {};
 
+        if (!valueType) {
+            return result;
+        }
+
         for (let i = 0; i < numKeys; i++) {
-            const key = String(
-                this.generateFromSchema(keyType as ZodType, currentDepth + 1),
-            );
-            result[key] = this.generateFromSchema(
-                valueType as ZodType,
-                currentDepth + 1,
-            );
+            const key = keyType
+                ? String(this.generateFromSchema(keyType, currentDepth + 1))
+                : this.factory.lorem.word();
+            result[key] = this.generateFromSchema(valueType, currentDepth + 1);
         }
 
         return result;
     }
 
     private generateSet(schema: ZodSet, currentDepth: number): Set<unknown> {
-        const { def } = schema._zod;
-        const { valueType } = def;
+        const def = schemaHelpers.getDef(schema);
+        const valueType = getProperty(def, ['valueType']) as
+            | undefined
+            | ZodType;
         const set = new Set();
         const size = this.factory.number.int({ max: 5, min: 1 });
 
+        if (!valueType) {
+            return set;
+        }
+
         for (let i = 0; i < size; i++) {
-            const value = this.generateFromSchema(
-                valueType as ZodType,
-                currentDepth + 1,
-            );
+            const value = this.generateFromSchema(valueType, currentDepth + 1);
             set.add(value);
         }
 
@@ -1362,12 +1463,13 @@ class ZodSchemaGenerator {
                         }
                         break;
                     }
+                    case undefined: {
+                        break;
+                    }
                     case 'url': {
                         return this.factory.internet.url();
                     }
                     default: {
-                        // For any other string format checks not explicitly handled
-                        // Fall through to regular string generation
                         break;
                     }
                 }
@@ -1397,18 +1499,22 @@ class ZodSchemaGenerator {
     }
 
     private generateTuple(schema: ZodTuple, currentDepth: number): unknown[] {
-        const { def } = schema._zod;
-        const { items, rest } = def;
+        const def = schemaHelpers.getDef(schema);
+        const items = getProperty(def, ['items']) as undefined | ZodType[];
+        const rest = getProperty(def, ['rest']) as undefined | ZodType;
+
+        if (!items || !Array.isArray(items)) {
+            return [];
+        }
+
         const result = items.map((itemSchema) =>
-            this.generateFromSchema(itemSchema as ZodType, currentDepth + 1),
+            this.generateFromSchema(itemSchema, currentDepth + 1),
         );
 
         if (rest) {
             const restCount = this.factory.number.int({ max: 3, min: 0 });
             for (let i = 0; i < restCount; i++) {
-                result.push(
-                    this.generateFromSchema(rest as ZodType, currentDepth + 1),
-                );
+                result.push(this.generateFromSchema(rest, currentDepth + 1));
             }
         }
 
@@ -1435,25 +1541,30 @@ class ZodSchemaGenerator {
             },
 
             ZodLazy: (schema, generator, currentDepth) => {
-                const { def } = (schema as unknown as $ZodLazy)._zod;
+                const def = schemaHelpers.getDef(schema);
+                const getter = getProperty(def, ['getter']) as
+                    | (() => ZodType)
+                    | undefined;
                 const maxDepth =
                     generator.factory.options?.maxDepth ?? DEFAULT_MAX_DEPTH;
 
+                if (!getter || !isFunction(getter)) {
+                    return {};
+                }
+
                 if (currentDepth >= maxDepth) {
                     try {
-                        const innerSchema = def.getter();
-                        return generator.getDepthLimitFallback(
-                            innerSchema as ZodType,
-                        );
+                        const innerSchema = getter();
+                        return generator.getDepthLimitFallback(innerSchema);
                     } catch {
                         return {};
                     }
                 }
 
                 try {
-                    const innerSchema = def.getter();
+                    const innerSchema = getter();
                     return generator.generateFromSchema(
-                        innerSchema as ZodType,
+                        innerSchema,
                         currentDepth + 1,
                     );
                 } catch {
@@ -1505,6 +1616,7 @@ class ZodSchemaGenerator {
     }
 
     private tryGenerateFromMetadata(schema: ZodType): unknown {
+        // eslint-disable-next-line @typescript-eslint/unbound-method
         const metadata = isFunction(schema.meta) ? schema.meta() : undefined;
         if (!metadata) {
             return undefined;
@@ -1587,9 +1699,7 @@ class ZodSchemaGenerator {
  * Using partial factory functions for custom generation:
  * ```typescript
  * const factory = new ZodFactory(UserSchema, (faker) => ({
- *   // Only customize specific fields
  *   name: faker.person.fullName(),
- *   // Other fields are auto-generated from schema
  * }));
  * ```
  *
@@ -1773,11 +1883,16 @@ export class ZodFactory<
         const generatedSchema = this.generator.generateFromSchema(this.schema);
         const generatedFromFactory = this.factory(this, 0);
 
-        const merged = {
-            ...(generatedSchema as Record<string, unknown>),
-            ...(generatedFromFactory as Record<string, unknown>),
-            ...(params as Record<string, unknown>),
-        };
+        const merged =
+            Array.isArray(generatedSchema) ||
+            typeof generatedSchema !== 'object' ||
+            generatedSchema === null
+                ? generatedSchema
+                : {
+                      ...(generatedSchema as Record<string, unknown>),
+                      ...(generatedFromFactory as Record<string, unknown>),
+                      ...(params as Record<string, unknown>),
+                  };
 
         let result = this.schema.parse(merged);
 

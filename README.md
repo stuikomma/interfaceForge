@@ -86,7 +86,7 @@ yarn add zod
 pnpm add zod
 ```
 
-**Note**: The ZodFactory uses Zod v4 API which is included in the standard Zod v3 package. No additional installation is required.
+**Note**: ZodFactory supports both Zod v3 and v4.
 
 ## Basic Example
 
@@ -570,12 +570,21 @@ For more information about available Faker.js methods, see the [Faker.js documen
 
 Interface-Forge provides seamless integration with [Zod](https://zod.dev/) schemas through the `ZodFactory` class. This allows you to generate mock data that automatically conforms to your Zod schema definitions.
 
-**Important**: The ZodFactory uses Zod v4 API which is available within the Zod v3 package. When importing Zod types, use `import { z } from 'zod/v4'` to access the v4 API.
+**Zod Version Support**: ZodFactory supports both Zod v3 and Zod v4 schemas automatically. The factory detects the schema version and handles the differences transparently:
+
+- **Zod v3**: Import schemas with `import { z } from 'zod'`
+- **Zod v4**: Import schemas with `import { z } from 'zod/v4'`
+
+Both versions work with the same ZodFactory API, so you can use existing v3 schemas without modification while also supporting newer v4 features.
 
 ### Basic Zod Usage
 
 ```typescript
-import { z } from 'zod/v4'; // Note: Using Zod v4 API
+// Works with both Zod v3 and v4
+import { z } from 'zod'; // For Zod v3
+// OR
+import { z } from 'zod/v4'; // For Zod v4
+
 import { ZodFactory } from 'interface-forge/zod';
 
 const UserSchema = z.object({
@@ -597,7 +606,7 @@ const user = userFactory.build();
 The `ZodFactory` supports **partial factory functions**, allowing you to customize only specific fields while automatically generating the rest from the schema:
 
 ```typescript
-import { z } from 'zod/v4';
+import { z } from 'zod'; // Works with both v3 and v4
 import { ZodFactory } from 'interface-forge/zod';
 
 const UserSchema = z.object({
@@ -669,6 +678,38 @@ const factory = new ZodFactory(UserSchema, {
 });
 ```
 
+#### Custom Type Handlers
+
+For advanced customization, register custom handlers for specific Zod types:
+
+```typescript
+import { z } from 'zod';
+import { ZodFactory } from 'interface-forge/zod';
+
+const factory = new ZodFactory(UserSchema)
+    // Single type handler
+    .withTypeHandler('ZodFunction', () => () => 'mock function')
+    // Multiple type handlers
+    .withTypeHandlers({
+        ZodPromise: (schema, generator) => Promise.resolve('mock result'),
+        ZodBigInt: () => BigInt(42),
+        ZodCustomType: (schema, generator, depth) => 'custom value',
+    });
+```
+
+**Required for Functions and Promises**: Zod `z.function()` and `z.promise()` schemas require custom type handlers as they cannot be automatically generated:
+
+```typescript
+const SchemaWithFunction = z.object({
+    callback: z.function(),
+    asyncResult: z.promise(z.string()),
+});
+
+const factory = new ZodFactory(SchemaWithFunction)
+    .withTypeHandler('ZodFunction', () => jest.fn())
+    .withTypeHandler('ZodPromise', () => Promise.resolve('test result'));
+```
+
 #### Schema Validation
 
 All generated data is guaranteed to be valid according to your Zod schema, including:
@@ -694,10 +735,24 @@ const factory = new ZodFactory(
 
 ### Complete Examples
 
+**Factory Examples**:
+
+- [Basic Usage](./examples/01-basic-usage.ts) - Getting started with factories
+- [Advanced Composition](./examples/02-advanced-composition.ts) - Complex object relationships
+- [Testing Patterns](./examples/03-testing-examples.ts) - Real-world testing scenarios
+- [Circular References](./examples/04-circular-references.ts) - Handling complex relationships
+- [Advanced Patterns](./examples/05-advanced-patterns.ts) - Sophisticated generation techniques
+- [Hooks & Validation](./examples/06-hooks-and-validation.ts) - Data transformation and validation
+- [Factory Extension](./examples/09-factory-extension.ts) - Using extend() for inheritance
+- [Generators Comparison](./examples/10-generators-comparison.ts) - iterate() vs sample() methods
+
+**ZodFactory Examples**:
+
 - [Basic Zod Usage](./examples/07-zod-basic.ts) - Simple schemas and API responses
 - [Advanced Zod Patterns](./examples/07-zod-integration.ts) - Complex schemas, unions, and recursion
 - [Testing with Zod](./examples/07-zod-testing.ts) - Real-world testing scenarios
 - [MaxDepth with Zod](./examples/08-zod-maxdepth.ts) - Handling depth limits in nested schemas
+- [Custom Type Handlers](./examples/11-zod-custom-handlers.ts) - Functions, promises, and custom types
 
 ## Performance Considerations
 
@@ -708,6 +763,58 @@ When generating large batches, consider:
 - Memory usage grows linearly with batch size
 - Use streaming or chunking for very large datasets
 - Hooks are applied to each instance individually
+
+**Optimization Strategies**:
+
+```typescript
+// ❌ Inefficient: Large single batch
+const users = UserFactory.batch(10000); // High memory usage
+
+// ✅ Better: Chunked generation
+function* generateUsers(total: number, chunkSize: number = 1000) {
+    for (let i = 0; i < total; i += chunkSize) {
+        const remaining = Math.min(chunkSize, total - i);
+        yield UserFactory.batch(remaining);
+    }
+}
+
+// ✅ Best: Stream processing
+async function processUsers(count: number) {
+    for (const chunk of generateUsers(count)) {
+        await processChunk(chunk);
+        // Memory is freed between chunks
+    }
+}
+```
+
+### Memory Optimization
+
+**Factory Reuse**: Create factories once and reuse them:
+
+```typescript
+// ❌ Creates new factory each time
+function createUser() {
+    return new Factory<User>(() => ({
+        /* schema */
+    })).build();
+}
+
+// ✅ Reuse factory instance
+const UserFactory = new Factory<User>(() => ({
+    /* schema */
+}));
+function createUser() {
+    return UserFactory.build();
+}
+```
+
+**Deterministic Data**: Use `seed()` for consistent memory patterns:
+
+```typescript
+// Consistent memory usage across test runs
+const factory = UserFactory.seed(12345);
+const users = factory.batch(1000);
+```
 
 ### Recursive Schemas and MaxDepth Behavior
 
@@ -766,6 +873,128 @@ const RecursiveSchema = z.lazy(() =>
 );
 
 const recursiveFactory = new ZodFactory(RecursiveSchema, { maxDepth: 3 });
+```
+
+## Error Handling
+
+### Factory Error Types
+
+Interface-Forge throws specific error types for different scenarios:
+
+```typescript
+import { ConfigurationError } from 'interface-forge';
+
+try {
+    // ❌ This will throw ConfigurationError
+    const factory = new Factory<User>((f) => ({
+        name: f.person.fullName(),
+        asyncData: Promise.resolve('data'), // Async data in sync factory
+    }));
+
+    factory.build(); // Throws: Cannot use build() with async factory functions
+} catch (error) {
+    if (error instanceof ConfigurationError) {
+        console.log('Configuration issue:', error.message);
+        // Use buildAsync() instead
+        const result = await factory.buildAsync();
+    }
+}
+```
+
+### ZodFactory Error Scenarios
+
+**Schema Validation Failures**:
+
+```typescript
+const StrictSchema = z.object({
+    email: z.string().email(),
+    age: z.number().min(18),
+});
+
+const factory = new ZodFactory(StrictSchema);
+
+try {
+    const user = factory.build({
+        email: 'invalid-email', // Will cause validation error
+    });
+} catch (error) {
+    console.log('Validation failed:', error.message);
+    // Handle validation errors gracefully
+}
+```
+
+**Missing Type Handlers**:
+
+```typescript
+const FunctionSchema = z.object({
+    callback: z.function(), // Requires custom handler
+});
+
+try {
+    const factory = new ZodFactory(FunctionSchema);
+    factory.build(); // Throws error
+} catch (error) {
+    console.log('Add type handler:', error.message);
+
+    // Fix by adding handler
+    const fixedFactory = factory.withTypeHandler('ZodFunction', () =>
+        jest.fn(),
+    );
+    const result = fixedFactory.build(); // Works
+}
+```
+
+### Hook Error Handling
+
+```typescript
+const factory = new Factory<User>((f) => ({
+    /* schema */
+}))
+    .beforeBuild((params) => {
+        if (!params.email) {
+            throw new Error('Email is required');
+        }
+        return params;
+    })
+    .afterBuild((user) => {
+        // Validate business rules
+        if (user.age < 0) {
+            throw new Error('Invalid age');
+        }
+        return user;
+    });
+
+try {
+    const user = factory.build({ age: -5 });
+} catch (error) {
+    console.log('Hook validation failed:', error.message);
+    // Handle or retry with valid data
+    const validUser = factory.build({ age: 25, email: 'test@example.com' });
+}
+```
+
+### Async Error Handling
+
+```typescript
+const asyncFactory = new Factory<User>((f) => ({
+    /* schema */
+})).afterBuild(async (user) => {
+    try {
+        // Simulate external API call
+        const enrichedData = await fetchUserData(user.id);
+        return { ...user, ...enrichedData };
+    } catch (apiError) {
+        // Graceful fallback
+        console.warn('API enrichment failed, using defaults');
+        return { ...user, enrichmentFailed: true };
+    }
+});
+
+try {
+    const user = await asyncFactory.buildAsync();
+} catch (error) {
+    console.log('Factory error:', error.message);
+}
 ```
 
 ## Common Patterns
