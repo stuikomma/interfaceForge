@@ -89,32 +89,7 @@ import {
 } from '@tool-belt/type-predicates';
 import { PartialFactoryFunction } from './types';
 import { DEFAULT_MAX_DEPTH } from './constants';
-import { merge } from './utils';
-
-const hasProperty = <T extends PropertyKey>(
-    obj: unknown,
-    prop: T,
-): obj is Record<T, unknown> => {
-    return isObject(obj) && Reflect.has(obj, prop);
-};
-
-const hasMethod = <K extends PropertyKey>(
-    obj: unknown,
-    method: K,
-): obj is Record<K, (...args: never[]) => unknown> => {
-    return hasProperty(obj, method) && isFunction(Reflect.get(obj, method));
-};
-
-const getProperty = (obj: unknown, path: string[]): unknown => {
-    let current = obj;
-    for (const key of path) {
-        if (!isObject(current) || !Reflect.has(current, key)) {
-            return undefined;
-        }
-        current = Reflect.get(current, key);
-    }
-    return current;
-};
+import { getProperty, hasMethod, hasProperty, merge } from './utils';
 
 /**
  * Helper functions to handle both Zod v3 and v4 schema structures

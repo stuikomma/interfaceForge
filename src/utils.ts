@@ -1,4 +1,4 @@
-import { isRecord } from '@tool-belt/type-predicates';
+import { isFunction, isObject, isRecord } from '@tool-belt/type-predicates';
 
 /**
  * Encapsulates a function and its arguments for deferred execution within factories.
@@ -20,6 +20,52 @@ export class Ref<T, C extends (...args: never[]) => T> {
     callHandler(): T {
         return this.handler(...this.args);
     }
+}
+
+/**
+ * Safely get a nested property value from an object using a path array.
+ *
+ * @param obj The object to get the property from
+ * @param path Array of property keys forming the path to the desired value
+ * @returns The value at the path, or undefined if not found
+ */
+export function getProperty(obj: unknown, path: string[]): unknown {
+    let current = obj;
+    for (const key of path) {
+        if (!isObject(current) || !Reflect.has(current, key)) {
+            return undefined;
+        }
+        current = Reflect.get(current, key);
+    }
+    return current;
+}
+
+/**
+ * Type guard to check if an object has a method with a specific name.
+ *
+ * @param obj The object to check
+ * @param method The method name to check for
+ * @returns True if the object has the method
+ */
+export function hasMethod<K extends PropertyKey>(
+    obj: unknown,
+    method: K,
+): obj is Record<K, (...args: never[]) => unknown> {
+    return hasProperty(obj, method) && isFunction(Reflect.get(obj, method));
+}
+
+/**
+ * Type guard to check if an object has a specific property.
+ *
+ * @param obj The object to check
+ * @param prop The property to check for
+ * @returns True if the object has the property
+ */
+export function hasProperty<T extends PropertyKey>(
+    obj: unknown,
+    prop: T,
+): obj is Record<T, unknown> {
+    return isObject(obj) && Reflect.has(obj, prop);
 }
 
 /**

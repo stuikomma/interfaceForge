@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { iterableToArray, merge, Ref } from './utils';
+import {
+    getProperty,
+    hasMethod,
+    hasProperty,
+    iterableToArray,
+    merge,
+    Ref,
+} from './utils';
 
 describe('Utils', () => {
     describe('iterableToArray', () => {
@@ -93,6 +100,136 @@ describe('Utils', () => {
             const handler = (n: number) => ({ doubled: n * 2, value: n });
             const ref = new Ref({ args: [5], handler });
             expect(ref.callHandler()).toEqual({ doubled: 10, value: 5 });
+        });
+    });
+
+    describe('hasProperty', () => {
+        it('returns true for existing properties', () => {
+            const obj = { a: 1, b: undefined, c: null };
+            expect(hasProperty(obj, 'a')).toBe(true);
+            expect(hasProperty(obj, 'b')).toBe(true);
+            expect(hasProperty(obj, 'c')).toBe(true);
+        });
+
+        it('returns false for non-existing properties', () => {
+            const obj = { a: 1 };
+            expect(hasProperty(obj, 'b')).toBe(false);
+            expect(hasProperty(obj, 'nonexistent')).toBe(false);
+        });
+
+        it('returns false for non-objects', () => {
+            expect(hasProperty(null, 'a')).toBe(false);
+            expect(hasProperty(undefined, 'a')).toBe(false);
+            expect(hasProperty(42, 'a')).toBe(false);
+            expect(hasProperty('string', 'a')).toBe(false);
+            expect(hasProperty(true, 'a')).toBe(false);
+        });
+
+        it('works with symbol properties', () => {
+            const sym = Symbol('test');
+            const obj = { [sym]: 'value' };
+            expect(hasProperty(obj, sym)).toBe(true);
+        });
+
+        it('works with inherited properties', () => {
+            class Parent {
+                inherited = 'value';
+            }
+            class Child extends Parent {
+                own = 'value';
+            }
+            const obj = new Child();
+            expect(hasProperty(obj, 'own')).toBe(true);
+            expect(hasProperty(obj, 'inherited')).toBe(true);
+        });
+    });
+
+    describe('hasMethod', () => {
+        it('returns true for methods', () => {
+            const obj = {
+                arrow: (x: number) => x * 2,
+                method: () => 'result',
+                regular() {
+                    return 'regular';
+                },
+            };
+            expect(hasMethod(obj, 'method')).toBe(true);
+            expect(hasMethod(obj, 'arrow')).toBe(true);
+            expect(hasMethod(obj, 'regular')).toBe(true);
+        });
+
+        it('returns false for non-function properties', () => {
+            const obj = {
+                nullValue: null,
+                number: 42,
+                object: { nested: true },
+                string: 'value',
+                undefinedValue: undefined,
+            };
+            expect(hasMethod(obj, 'string')).toBe(false);
+            expect(hasMethod(obj, 'number')).toBe(false);
+            expect(hasMethod(obj, 'object')).toBe(false);
+            expect(hasMethod(obj, 'nullValue')).toBe(false);
+            expect(hasMethod(obj, 'undefinedValue')).toBe(false);
+        });
+
+        it('returns false for non-existing properties', () => {
+            const obj = { method: () => 'result' };
+            expect(hasMethod(obj, 'nonexistent')).toBe(false);
+        });
+
+        it('returns false for non-objects', () => {
+            expect(hasMethod(null, 'method')).toBe(false);
+            expect(hasMethod(undefined, 'method')).toBe(false);
+            expect(hasMethod(42, 'method')).toBe(false);
+        });
+    });
+
+    describe('getProperty', () => {
+        it('gets nested properties', () => {
+            const obj = {
+                a: {
+                    b: {
+                        c: 'value',
+                    },
+                },
+            };
+            expect(getProperty(obj, ['a', 'b', 'c'])).toBe('value');
+            expect(getProperty(obj, ['a', 'b'])).toEqual({ c: 'value' });
+            expect(getProperty(obj, ['a'])).toEqual({ b: { c: 'value' } });
+        });
+
+        it('returns undefined for non-existing paths', () => {
+            const obj = { a: { b: 'value' } };
+            expect(getProperty(obj, ['a', 'b', 'c'])).toBe(undefined);
+            expect(getProperty(obj, ['x', 'y'])).toBe(undefined);
+            expect(getProperty(obj, ['a', 'x'])).toBe(undefined);
+        });
+
+        it('handles empty path', () => {
+            const obj = { a: 1 };
+            expect(getProperty(obj, [])).toBe(obj);
+        });
+
+        it('handles null and undefined values in path', () => {
+            const obj = { a: null, b: { c: undefined } };
+            expect(getProperty(obj, ['a'])).toBe(null);
+            expect(getProperty(obj, ['b', 'c'])).toBe(undefined);
+            expect(getProperty(obj, ['a', 'x'])).toBe(undefined);
+            expect(getProperty(obj, ['b', 'c', 'x'])).toBe(undefined);
+        });
+
+        it('handles non-object inputs', () => {
+            expect(getProperty(null, ['a'])).toBe(undefined);
+            expect(getProperty(undefined, ['a'])).toBe(undefined);
+            expect(getProperty(42, ['a'])).toBe(undefined);
+            expect(getProperty('string', ['a'])).toBe(undefined);
+        });
+
+        it('handles arrays', () => {
+            const obj = { arr: [1, 2, { nested: 'value' }] };
+            expect(getProperty(obj, ['arr', '0'])).toBe(1);
+            expect(getProperty(obj, ['arr', '2', 'nested'])).toBe('value');
         });
     });
 });
