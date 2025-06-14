@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-misused-spread,  @typescript-eslint/unbound-method, @typescript-eslint/switch-exhaustiveness-check, @typescript-eslint/no-deprecated */
+
 import {
     z,
     ZodAny,
@@ -64,6 +66,7 @@ import type {
     ZodTuple,
     ZodType,
 } from 'zod/v4';
+import type { ZodType as ZodV3Type } from 'zod';
 import type {
     $ZodCheckGreaterThan,
     $ZodCheckLengthEquals,
@@ -92,37 +95,41 @@ import { PartialFactoryFunction } from './types';
 import { DEFAULT_MAX_DEPTH } from './constants';
 
 // Helper types for Zod v3/v4 compatibility
-// These types use 'any' intentionally to handle the differences between Zod v3 and v4
-/* eslint-disable @typescript-eslint/no-explicit-any */
-interface ZodV3Check {
-    [key: string]: any;
-    format?: string;
-    kind?: string;
-    maximum?: any;
-    minimum?: any;
-    value?: any;
-}
-
 interface ZodV3Schema {
-    _def: any;
-}
-
-interface ZodV4Check {
-    _zod: {
-        def: {
-            [key: string]: any;
-            format?: string;
-        };
-    };
+    _def: unknown;
 }
 
 interface ZodV4Schema {
     _zod: {
-        [key: string]: any;
-        def: any;
+        [key: string]: unknown;
+        def: unknown;
     };
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
+
+const hasProperty = <T extends PropertyKey>(
+    obj: unknown,
+    prop: T,
+): obj is Record<T, unknown> => {
+    return isObject(obj) && Reflect.has(obj, prop);
+};
+
+const hasMethod = <K extends PropertyKey>(
+    obj: unknown,
+    method: K,
+): obj is Record<K, (...args: never[]) => unknown> => {
+    return hasProperty(obj, method) && isFunction(Reflect.get(obj, method));
+};
+
+const getProperty = (obj: unknown, path: string[]): unknown => {
+    let current = obj;
+    for (const key of path) {
+        if (!isObject(current) || !Reflect.has(current, key)) {
+            return undefined;
+        }
+        current = Reflect.get(current, key);
+    }
+    return current;
+};
 
 /**
  * Helper functions to handle both Zod v3 and v4 schema structures
@@ -135,10 +142,8 @@ const schemaHelpers = {
      * @returns The array element type or undefined
      */
     getArrayElement(schema: ZodArray): undefined | ZodType {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
         const def = schemaHelpers.getDef(schema);
-        return def?.type;
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
+        return getProperty(def, ['type']) as undefined | ZodType;
     },
 
     /**
@@ -148,11 +153,16 @@ const schemaHelpers = {
      * @returns The check format or undefined
      */
     getCheckFormat(check: $ZodChecks): string | undefined {
-        /* eslint-disable @typescript-eslint/no-unnecessary-condition, @typescript-eslint/prefer-nullish-coalescing */
-        const v4Check = check as unknown as ZodV4Check;
-        const v3Check = check as unknown as ZodV3Check;
-        return v4Check._zod?.def?.format || v3Check.format;
-        /* eslint-enable @typescript-eslint/no-unnecessary-condition, @typescript-eslint/prefer-nullish-coalescing */
+        // Try v4 format first
+        const v4Format = getProperty(check, ['_zod', 'def', 'format']) as
+            | string
+            | undefined;
+        if (v4Format) {
+            return v4Format;
+        }
+
+        // Fallback to v3 format
+        return getProperty(check, ['format']) as string | undefined;
     },
 
     /**
@@ -162,10 +172,8 @@ const schemaHelpers = {
      * @returns Array of checks
      */
     getChecks(schema: ZodType): $ZodChecks[] {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
         const def = schemaHelpers.getDef(schema);
-        return def?.checks || [];
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
+        return (getProperty(def, ['checks']) as $ZodChecks[]) || [];
     },
 
     /**
@@ -175,10 +183,16 @@ const schemaHelpers = {
      * @returns The check type or undefined
      */
     getCheckType(check: $ZodChecks): string | undefined {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
-        const v4Check = check as any;
-        return v4Check._zod?.def?.check || v4Check.kind;
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
+        // Try v4 check type first
+        const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
+            | string
+            | undefined;
+        if (v4CheckType) {
+            return v4CheckType;
+        }
+
+        // Fallback to v3 kind
+        return getProperty(check, ['kind']) as string | undefined;
     },
 
     /**
@@ -187,21 +201,45 @@ const schemaHelpers = {
      * @param check
      * @returns The check value
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getCheckValue(check: $ZodChecks): any {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
-        const v4Check = check as any;
-        return (
-            v4Check._zod?.def?.value ??
-            v4Check._zod?.def?.minimum ??
-            v4Check._zod?.def?.maximum ??
-            v4Check._zod?.def?.length ??
-            v4Check.value ??
-            v4Check.minimum ??
-            v4Check.maximum ??
-            v4Check.length
-        );
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
+    getCheckValue(check: $ZodChecks): unknown {
+        // Try v4 value properties first
+        const v4Value = getProperty(check, ['_zod', 'def', 'value']);
+        if (v4Value !== undefined) {
+            return v4Value;
+        }
+
+        const v4Minimum = getProperty(check, ['_zod', 'def', 'minimum']);
+        if (v4Minimum !== undefined) {
+            return v4Minimum;
+        }
+
+        const v4Maximum = getProperty(check, ['_zod', 'def', 'maximum']);
+        if (v4Maximum !== undefined) {
+            return v4Maximum;
+        }
+
+        const v4Length = getProperty(check, ['_zod', 'def', 'length']);
+        if (v4Length !== undefined) {
+            return v4Length;
+        }
+
+        // Fallback to v3 properties
+        const v3Value = getProperty(check, ['value']);
+        if (v3Value !== undefined) {
+            return v3Value;
+        }
+
+        const v3Minimum = getProperty(check, ['minimum']);
+        if (v3Minimum !== undefined) {
+            return v3Minimum;
+        }
+
+        const v3Maximum = getProperty(check, ['maximum']);
+        if (v3Maximum !== undefined) {
+            return v3Maximum;
+        }
+
+        return getProperty(check, ['length']);
     },
 
     /**
@@ -210,13 +248,15 @@ const schemaHelpers = {
      * @param schema
      * @returns The schema definition
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getDef(schema: ZodType): any {
-        /* eslint-disable @typescript-eslint/prefer-nullish-coalescing, @typescript-eslint/no-unnecessary-condition */
-        const v4Schema = schema as unknown as ZodV4Schema;
-        const v3Schema = schema as unknown as ZodV3Schema;
-        return v4Schema._zod?.def || v3Schema._def;
-        /* eslint-enable @typescript-eslint/prefer-nullish-coalescing, @typescript-eslint/no-unnecessary-condition */
+    getDef(schema: ZodType | ZodV3Type): unknown {
+        // Try v4 structure first
+        const v4Def = getProperty(schema, ['_zod', 'def']);
+        if (v4Def !== undefined) {
+            return v4Def;
+        }
+
+        // Fallback to v3 structure
+        return getProperty(schema, ['_def']);
     },
 
     /**
@@ -226,10 +266,8 @@ const schemaHelpers = {
      * @returns Array of enum values
      */
     getEnumValues(schema: ZodEnum): string[] {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
         const def = schemaHelpers.getDef(schema);
-        return def?.values || [];
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
+        return (getProperty(def, ['values']) as string[]) || [];
     },
 
     /**
@@ -239,10 +277,8 @@ const schemaHelpers = {
      * @returns The inner type or undefined
      */
     getInnerType(schema: ZodType): undefined | ZodType {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
         const def = schemaHelpers.getDef(schema);
-        return def?.innerType;
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
+        return getProperty(def, ['innerType']) as undefined | ZodType;
     },
 
     /**
@@ -251,12 +287,9 @@ const schemaHelpers = {
      * @param schema
      * @returns The literal value
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getLiteralValue(schema: ZodLiteral): any {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
+    getLiteralValue(schema: ZodLiteral): unknown {
         const def = schemaHelpers.getDef(schema);
-        return def?.value;
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
+        return getProperty(def, ['value']);
     },
 
     /**
@@ -266,10 +299,13 @@ const schemaHelpers = {
      * @returns The object shape or undefined
      */
     getObjectShape(schema: ZodObject): Record<string, ZodType> | undefined {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
         const def = schemaHelpers.getDef(schema);
-        return def?.shape?.();
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
+        if (hasMethod(def, 'shape')) {
+            return def.shape() as Record<string, ZodType>;
+        }
+        return getProperty(def, ['shape']) as
+            | Record<string, ZodType>
+            | undefined;
     },
 
     /**
@@ -279,10 +315,8 @@ const schemaHelpers = {
      * @returns The record value type or undefined
      */
     getRecordValueType(schema: ZodRecord): undefined | ZodType {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
         const def = schemaHelpers.getDef(schema);
-        return def?.valueType;
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
+        return getProperty(def, ['valueType']) as undefined | ZodType;
     },
 
     /**
@@ -292,10 +326,13 @@ const schemaHelpers = {
      * @returns The type name or undefined
      */
     getTypeName(schema: ZodType): string | undefined {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
         const def = schemaHelpers.getDef(schema);
-        return def?.type || def?.typeName;
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
+        const type = getProperty(def, ['type']) as string | undefined;
+        if (type) {
+            return type;
+        }
+
+        return getProperty(def, ['typeName']) as string | undefined;
     },
 
     /**
@@ -305,10 +342,8 @@ const schemaHelpers = {
      * @returns Array of union options
      */
     getUnionOptions(schema: ZodUnion): ZodType[] {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
         const def = schemaHelpers.getDef(schema);
-        return def?.options || [];
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
+        return (getProperty(def, ['options']) as ZodType[]) || [];
     },
 
     /**
@@ -353,13 +388,55 @@ type ZodTypeHandler = (
     currentDepth: number,
 ) => unknown;
 
+// Helper to check if a schema is from Zod v3 or v4
+const hasZodV4Structure = (schema: unknown): schema is ZodV4Schema => {
+    return isObject(schema) && '_zod' in schema && isObject(schema._zod);
+};
+
+const hasZodV3Structure = (schema: unknown): schema is ZodV3Schema => {
+    return isObject(schema) && '_def' in schema;
+};
+
+const getSchemaTypeName = (schema: ZodType | ZodV3Type): string | undefined => {
+    if (hasZodV4Structure(schema)) {
+        return (
+            (schema._zod.def as { type?: string })?.type ??
+            (schema._zod.def as { typeName?: string })?.typeName
+        );
+    }
+    if (hasZodV3Structure(schema)) {
+         
+        return (
+            (schema._def as { type?: string })?.type ??
+            (schema._def as { typeName?: string })?.typeName
+        );
+    }
+    return undefined;
+};
+
 const createZodTypeGuard = <T extends ZodType>(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    constructor: new (...args: any[]) => T,
+    constructor: new (...args: never[]) => T,
+    typeName?: string,
 ) => {
     return createTypeGuard<T>((value: unknown): value is T => {
         try {
-            return value instanceof constructor;
+            // First try instanceof check for v4
+            if (value instanceof constructor) {
+                return true;
+            }
+
+            // Fallback to type name checking for v3/v4 compatibility
+            if (
+                typeName &&
+                (hasZodV4Structure(value) || hasZodV3Structure(value))
+            ) {
+                const schemaTypeName = getSchemaTypeName(
+                    value as ZodType | ZodV3Type,
+                );
+                return schemaTypeName === typeName;
+            }
+
+            return false;
         } catch {
             return false;
         }
@@ -367,61 +444,64 @@ const createZodTypeGuard = <T extends ZodType>(
 };
 
 const zodTypeGuards = {
-    any: createZodTypeGuard(ZodAny),
-    array: createZodTypeGuard(ZodArrayClass),
-    boolean: createZodTypeGuard(ZodBoolean),
-    catch: createZodTypeGuard(ZodCatch),
-    date: createZodTypeGuard(ZodDateClass),
-    default: createZodTypeGuard(ZodDefault),
-    discriminatedUnion: createZodTypeGuard(ZodDiscriminatedUnion),
-    enum: createZodTypeGuard(ZodEnumClass),
-    intersection: createZodTypeGuard(ZodIntersection),
-    literal: createZodTypeGuard(ZodLiteralClass),
-    map: createZodTypeGuard(ZodMapClass),
-    null: createZodTypeGuard(ZodNull),
-    nullable: createZodTypeGuard(ZodNullable),
-    number: createZodTypeGuard(ZodNumberClass),
-    object: createZodTypeGuard(ZodObjectClass),
-    optional: createZodTypeGuard(ZodOptional),
-    pipe: createZodTypeGuard(ZodPipe),
-    promise: createZodTypeGuard(ZodPromise),
-    record: createZodTypeGuard(ZodRecordClass),
-    set: createZodTypeGuard(ZodSetClass),
-    string: createZodTypeGuard(ZodStringClass),
-    transform: createZodTypeGuard(ZodTransform),
-    tuple: createZodTypeGuard(ZodTupleClass),
-    undefined: createZodTypeGuard(ZodUndefined),
-    union: createZodTypeGuard(ZodUnion),
-    unknown: createZodTypeGuard(ZodUnknown),
-    void: createZodTypeGuard(ZodVoid),
+    any: createZodTypeGuard(ZodAny, 'ZodAny'),
+    array: createZodTypeGuard(ZodArrayClass, 'ZodArray'),
+    boolean: createZodTypeGuard(ZodBoolean, 'ZodBoolean'),
+    catch: createZodTypeGuard(ZodCatch, 'ZodCatch'),
+    date: createZodTypeGuard(ZodDateClass, 'ZodDate'),
+    default: createZodTypeGuard(ZodDefault, 'ZodDefault'),
+    discriminatedUnion: createZodTypeGuard(
+        ZodDiscriminatedUnion,
+        'ZodDiscriminatedUnion',
+    ),
+    enum: createZodTypeGuard(ZodEnumClass, 'ZodEnum'),
+    intersection: createZodTypeGuard(ZodIntersection, 'ZodIntersection'),
+    literal: createZodTypeGuard(ZodLiteralClass, 'ZodLiteral'),
+    map: createZodTypeGuard(ZodMapClass, 'ZodMap'),
+    null: createZodTypeGuard(ZodNull, 'ZodNull'),
+    nullable: createZodTypeGuard(ZodNullable, 'ZodNullable'),
+    number: createZodTypeGuard(ZodNumberClass, 'ZodNumber'),
+    object: createZodTypeGuard(ZodObjectClass, 'ZodObject'),
+    optional: createZodTypeGuard(ZodOptional, 'ZodOptional'),
+    pipe: createZodTypeGuard(ZodPipe, 'ZodPipeline'),
+    promise: createZodTypeGuard(ZodPromise, 'ZodPromise'),
+    record: createZodTypeGuard(ZodRecordClass, 'ZodRecord'),
+    set: createZodTypeGuard(ZodSetClass, 'ZodSet'),
+    string: createZodTypeGuard(ZodStringClass, 'ZodString'),
+    transform: createZodTypeGuard(ZodTransform, 'ZodTransform'),
+    tuple: createZodTypeGuard(ZodTupleClass, 'ZodTuple'),
+    undefined: createZodTypeGuard(ZodUndefined, 'ZodUndefined'),
+    union: createZodTypeGuard(ZodUnion, 'ZodUnion'),
+    unknown: createZodTypeGuard(ZodUnknown, 'ZodUnknown'),
+    void: createZodTypeGuard(ZodVoid, 'ZodVoid'),
 } as const;
 
 const zodStringFormats = {
-    base64: createZodTypeGuard(ZodBase64),
-    base64url: createZodTypeGuard(ZodBase64URL),
-    cidrv4: createZodTypeGuard(ZodCIDRv4),
-    cidrv6: createZodTypeGuard(ZodCIDRv6),
-    cuid: createZodTypeGuard(ZodCUID),
-    cuid2: createZodTypeGuard(ZodCUID2),
-    e164: createZodTypeGuard(ZodE164),
-    email: createZodTypeGuard(ZodEmail),
-    emoji: createZodTypeGuard(ZodEmoji),
-    ipv4: createZodTypeGuard(ZodIPv4),
-    ipv6: createZodTypeGuard(ZodIPv6),
-    jwt: createZodTypeGuard(ZodJWT),
-    ksuid: createZodTypeGuard(ZodKSUID),
-    nanoid: createZodTypeGuard(ZodNanoID),
-    ulid: createZodTypeGuard(ZodULID),
-    url: createZodTypeGuard(ZodURL),
-    uuid: createZodTypeGuard(ZodUUID),
-    xid: createZodTypeGuard(ZodXID),
+    base64: createZodTypeGuard(ZodBase64, 'ZodString'),
+    base64url: createZodTypeGuard(ZodBase64URL, 'ZodString'),
+    cidrv4: createZodTypeGuard(ZodCIDRv4, 'ZodString'),
+    cidrv6: createZodTypeGuard(ZodCIDRv6, 'ZodString'),
+    cuid: createZodTypeGuard(ZodCUID, 'ZodString'),
+    cuid2: createZodTypeGuard(ZodCUID2, 'ZodString'),
+    e164: createZodTypeGuard(ZodE164, 'ZodString'),
+    email: createZodTypeGuard(ZodEmail, 'ZodString'),
+    emoji: createZodTypeGuard(ZodEmoji, 'ZodString'),
+    ipv4: createZodTypeGuard(ZodIPv4, 'ZodString'),
+    ipv6: createZodTypeGuard(ZodIPv6, 'ZodString'),
+    jwt: createZodTypeGuard(ZodJWT, 'ZodString'),
+    ksuid: createZodTypeGuard(ZodKSUID, 'ZodString'),
+    nanoid: createZodTypeGuard(ZodNanoID, 'ZodString'),
+    ulid: createZodTypeGuard(ZodULID, 'ZodString'),
+    url: createZodTypeGuard(ZodURL, 'ZodString'),
+    uuid: createZodTypeGuard(ZodUUID, 'ZodString'),
+    xid: createZodTypeGuard(ZodXID, 'ZodString'),
 } as const;
 
 const zodDateFormats = {
-    date: createZodTypeGuard(ZodISODate),
-    datetime: createZodTypeGuard(ZodISODateTime),
-    duration: createZodTypeGuard(ZodISODuration),
-    time: createZodTypeGuard(ZodISOTime),
+    date: createZodTypeGuard(ZodISODate, 'ZodString'),
+    datetime: createZodTypeGuard(ZodISODateTime, 'ZodString'),
+    duration: createZodTypeGuard(ZodISODuration, 'ZodString'),
+    time: createZodTypeGuard(ZodISOTime, 'ZodString'),
 } as const;
 
 const primitiveTypeHandlers = {
@@ -462,109 +542,97 @@ interface SizeConstraints {
 const isStringFormatCheck = createTypeGuard<$ZodCheckStringFormat>(
     (check): check is $ZodCheckStringFormat => {
         // Handle both Zod v3 and v4 structures
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
-        const v4Check = check as any;
-        return (
-            v4Check._zod?.def?.check === 'string_format' ||
-            v4Check.kind === 'regex'
-        );
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
+        const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
+            | string
+            | undefined;
+        const v3Kind = getProperty(check, ['kind']) as string | undefined;
+        return v4CheckType === 'string_format' || v3Kind === 'regex';
     },
 );
 
 const isRegexCheck = createTypeGuard<$ZodCheckRegex>(
     (check): check is $ZodCheckRegex => {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
-        const v4Check = check as any;
+        const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
+            | string
+            | undefined;
+        const v4Format = getProperty(check, ['_zod', 'def', 'format']) as
+            | string
+            | undefined;
+        const v3Kind = getProperty(check, ['kind']) as string | undefined;
         return (
-            (v4Check._zod?.def?.check === 'string_format' &&
-                v4Check._zod?.def?.format === 'regex') ||
-            v4Check.kind === 'regex'
+            (v4CheckType === 'string_format' && v4Format === 'regex') ||
+            v3Kind === 'regex'
         );
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
     },
 );
 
 const isLessThanCheck = createTypeGuard<$ZodCheckLessThan>(
     (check): check is $ZodCheckLessThan => {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
-        const v4Check = check as any;
-        return (
-            v4Check._zod?.def?.check === 'less_than' || v4Check.kind === 'max'
-        );
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
+        const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
+            | string
+            | undefined;
+        const v3Kind = getProperty(check, ['kind']) as string | undefined;
+        return v4CheckType === 'less_than' || v3Kind === 'max';
     },
 );
 
 const isGreaterThanCheck = createTypeGuard<$ZodCheckGreaterThan>(
     (check): check is $ZodCheckGreaterThan => {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
-        const v4Check = check as any;
-        return (
-            v4Check._zod?.def?.check === 'greater_than' ||
-            v4Check.kind === 'min'
-        );
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
+        const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
+            | string
+            | undefined;
+        const v3Kind = getProperty(check, ['kind']) as string | undefined;
+        return v4CheckType === 'greater_than' || v3Kind === 'min';
     },
 );
 
 const isMultipleOfCheck = createTypeGuard<$ZodCheckMultipleOf>(
     (check): check is $ZodCheckMultipleOf => {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
-        const v4Check = check as any;
-        return (
-            v4Check._zod?.def?.check === 'multiple_of' ||
-            v4Check.kind === 'multipleOf'
-        );
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
+        const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
+            | string
+            | undefined;
+        const v3Kind = getProperty(check, ['kind']) as string | undefined;
+        return v4CheckType === 'multiple_of' || v3Kind === 'multipleOf';
     },
 );
 
 const isNumberFormatCheck = createTypeGuard<$ZodCheckNumberFormat>(
     (check): check is $ZodCheckNumberFormat => {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
-        const v4Check = check as any;
-        return (
-            v4Check._zod?.def?.check === 'number_format' ||
-            v4Check.kind === 'int'
-        );
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
+        const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
+            | string
+            | undefined;
+        const v3Kind = getProperty(check, ['kind']) as string | undefined;
+        return v4CheckType === 'number_format' || v3Kind === 'int';
     },
 );
 
 const isMaxLengthCheck = createTypeGuard<$ZodCheckMaxLength>(
     (check): check is $ZodCheckMaxLength => {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
-        const v4Check = check as any;
-        return (
-            v4Check._zod?.def?.check === 'max_length' ||
-            v4Check.kind === 'maxLength'
-        );
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
+        const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
+            | string
+            | undefined;
+        const v3Kind = getProperty(check, ['kind']) as string | undefined;
+        return v4CheckType === 'max_length' || v3Kind === 'maxLength';
     },
 );
 
 const isMinLengthCheck = createTypeGuard<$ZodCheckMinLength>(
     (check): check is $ZodCheckMinLength => {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
-        const v4Check = check as any;
-        return (
-            v4Check._zod?.def?.check === 'min_length' ||
-            v4Check.kind === 'minLength'
-        );
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
+        const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
+            | string
+            | undefined;
+        const v3Kind = getProperty(check, ['kind']) as string | undefined;
+        return v4CheckType === 'min_length' || v3Kind === 'minLength';
     },
 );
 
 const isLengthEqualsCheck = createTypeGuard<$ZodCheckLengthEquals>(
     (check): check is $ZodCheckLengthEquals => {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
-        const v4Check = check as any;
-        return (
-            v4Check._zod?.def?.check === 'length_equals' ||
-            v4Check.kind === 'length'
-        );
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
+        const v4CheckType = getProperty(check, ['_zod', 'def', 'check']) as
+            | string
+            | undefined;
+        const v3Kind = getProperty(check, ['kind']) as string | undefined;
+        return v4CheckType === 'length_equals' || v3Kind === 'length';
     },
 );
 
@@ -657,7 +725,6 @@ class ZodSchemaGenerator {
             const chars = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
             let ulid = '';
             for (let i = 0; i < 26; i++) {
-                // eslint-disable-next-line @typescript-eslint/no-misused-spread
                 ulid += generator.factory.helpers.arrayElement([...chars]);
             }
             return ulid;
@@ -670,7 +737,6 @@ class ZodSchemaGenerator {
             const chars = '0123456789abcdefghijklmnopqrstuv';
             let xid = '';
             for (let i = 0; i < 20; i++) {
-                // eslint-disable-next-line @typescript-eslint/no-misused-spread
                 xid += generator.factory.helpers.arrayElement([...chars]);
             }
             return xid;
@@ -813,17 +879,20 @@ class ZodSchemaGenerator {
 
         for (const check of checks) {
             if (isMinLengthCheck(check)) {
-                /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-                constraints.minLength = schemaHelpers.getCheckValue(check);
-                /* eslint-enable @typescript-eslint/no-unsafe-assignment */
+                const value = schemaHelpers.getCheckValue(check);
+                if (typeof value === 'number') {
+                    constraints.minLength = value;
+                }
             } else if (isMaxLengthCheck(check)) {
-                /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-                constraints.maxLength = schemaHelpers.getCheckValue(check);
-                /* eslint-enable @typescript-eslint/no-unsafe-assignment */
+                const value = schemaHelpers.getCheckValue(check);
+                if (typeof value === 'number') {
+                    constraints.maxLength = value;
+                }
             } else if (isLengthEqualsCheck(check)) {
-                /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-                constraints.exactLength = schemaHelpers.getCheckValue(check);
-                /* eslint-enable @typescript-eslint/no-unsafe-assignment */
+                const value = schemaHelpers.getCheckValue(check);
+                if (typeof value === 'number') {
+                    constraints.exactLength = value;
+                }
             }
         }
 
@@ -851,7 +920,6 @@ class ZodSchemaGenerator {
     }
 
     private generateDate(schema: ZodDate): Date {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment */
         const { def } = schema._zod;
         const checks = (def.checks as $ZodChecks[] | undefined) ?? [];
 
@@ -862,12 +930,22 @@ class ZodSchemaGenerator {
             const checkType = schemaHelpers.getCheckType(check);
             const checkValue = schemaHelpers.getCheckValue(check);
             if (checkType === 'greater_than' || checkType === 'min') {
-                minDate = new Date(checkValue as Date);
-            } else if (checkType === 'less_than' || checkType === 'max') {
-                maxDate = new Date(checkValue as Date);
+                if (
+                    checkValue instanceof Date ||
+                    typeof checkValue === 'string' ||
+                    typeof checkValue === 'number'
+                ) {
+                    minDate = new Date(checkValue);
+                }
+            } else if (
+                (checkType === 'less_than' || checkType === 'max') &&
+                (checkValue instanceof Date ||
+                    typeof checkValue === 'string' ||
+                    typeof checkValue === 'number')
+            ) {
+                maxDate = new Date(checkValue);
             }
         }
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment */
 
         if (minDate && maxDate) {
             return this.factory.date.between({ from: minDate, to: maxDate });
@@ -887,33 +965,37 @@ class ZodSchemaGenerator {
     }
 
     private generateFromRegex(check: $ZodCheckRegex): string {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing, @typescript-eslint/no-unsafe-call */
-        const v4Check = check as any;
-        const pattern =
-            v4Check._zod?.def?.pattern || v4Check.regex || v4Check.pattern;
+        const v4Pattern = getProperty(check, ['_zod', 'def', 'pattern']) as
+            | RegExp
+            | undefined;
+        const v3Regex = getProperty(check, ['regex']) as RegExp | undefined;
+        const v3Pattern = getProperty(check, ['pattern']) as RegExp | undefined;
 
-        const { source } = pattern;
-        if (source.includes('@')) {
-            return this.factory.internet.email();
-        }
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing, @typescript-eslint/no-unsafe-call */
-        if (source === '^[a-zA-Z0-9_]+$') {
-            return this.factory.string.alphanumeric(10);
-        }
-        if (source === '^[A-Z]{3}-\\d{3}$') {
-            return `${this.factory.string.alpha({ casing: 'upper', length: 3 })}-${this.factory.string.numeric({ length: 3 })}`;
-        }
+        const pattern = v4Pattern ?? v3Regex ?? v3Pattern;
+        if (pattern instanceof RegExp) {
+            const { source } = pattern;
+            if (source.includes('@')) {
+                return this.factory.internet.email();
+            }
 
-        if (source === '^\\+?[\\d\\s-()]+$') {
-            return `+${this.factory.string.numeric({ length: 1 })} (${this.factory.string.numeric({ length: 3 })}) ${this.factory.string.numeric({ length: 3 })}-${this.factory.string.numeric({ length: 4 })}`;
-        }
+            if (source === '^[a-zA-Z0-9_]+$') {
+                return this.factory.string.alphanumeric(10);
+            }
+            if (source === '^[A-Z]{3}-\\d{3}$') {
+                return `${this.factory.string.alpha({ casing: 'upper', length: 3 })}-${this.factory.string.numeric({ length: 3 })}`;
+            }
 
-        if (source === '^\\d{5}$') {
-            return this.factory.string.numeric({ length: 5 });
-        }
+            if (source === '^\\+?[\\d\\s-()]+$') {
+                return `+${this.factory.string.numeric({ length: 1 })} (${this.factory.string.numeric({ length: 3 })}) ${this.factory.string.numeric({ length: 3 })}-${this.factory.string.numeric({ length: 4 })}`;
+            }
 
-        if (source === '^key_') {
-            return `key_${this.factory.string.alphanumeric(10)}`;
+            if (source === '^\\d{5}$') {
+                return this.factory.string.numeric({ length: 5 });
+            }
+
+            if (source === '^key_') {
+                return `key_${this.factory.string.alphanumeric(10)}`;
+            }
         }
 
         return this.factory.string.alphanumeric(10);
@@ -1112,25 +1194,38 @@ class ZodSchemaGenerator {
 
         for (const check of checks) {
             if (isLessThanCheck(check)) {
-                /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
-                const v4Check = check as any;
-                const checkDef = v4Check._zod?.def || v4Check;
+                const v4Inclusive = getProperty(check, [
+                    '_zod',
+                    'def',
+                    'inclusive',
+                ]) as boolean | undefined;
+                const v3Inclusive = getProperty(check, ['inclusive']) as
+                    | boolean
+                    | undefined;
+                const inclusive = v4Inclusive ?? v3Inclusive ?? false;
                 const value = schemaHelpers.getCheckValue(check);
-                constraints.max = checkDef.inclusive
-                    ? (value as number)
-                    : (value as number) - 0.000_001;
-                /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
+                if (typeof value === 'number') {
+                    constraints.max = inclusive ? value : value - 0.000_001;
+                }
             } else if (isGreaterThanCheck(check)) {
-                /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
-                const v4Check = check as any;
-                const checkDef = v4Check._zod?.def || v4Check;
+                const v4Inclusive = getProperty(check, [
+                    '_zod',
+                    'def',
+                    'inclusive',
+                ]) as boolean | undefined;
+                const v3Inclusive = getProperty(check, ['inclusive']) as
+                    | boolean
+                    | undefined;
+                const inclusive = v4Inclusive ?? v3Inclusive ?? false;
                 const value = schemaHelpers.getCheckValue(check);
-                constraints.min = checkDef.inclusive
-                    ? (value as number)
-                    : (value as number) + 0.000_001;
-                /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/prefer-nullish-coalescing */
+                if (typeof value === 'number') {
+                    constraints.min = inclusive ? value : value + 0.000_001;
+                }
             } else if (isMultipleOfCheck(check)) {
-                constraints.step = schemaHelpers.getCheckValue(check) as number;
+                const value = schemaHelpers.getCheckValue(check);
+                if (typeof value === 'number') {
+                    constraints.step = value;
+                }
             } else if (isNumberFormatCheck(check)) {
                 const format = schemaHelpers.getCheckFormat(check);
                 if (
@@ -1189,11 +1284,9 @@ class ZodSchemaGenerator {
         currentDepth: number,
     ): Record<string, unknown> {
         const maxDepth = this.factory.options?.maxDepth ?? DEFAULT_MAX_DEPTH;
-        /* eslint-disable @typescript-eslint/no-unnecessary-condition */
         const def = schemaHelpers.getDef(schema) as $ZodObjectDef;
         const result: Record<string, unknown> = {};
         const shape = def?.shape;
-        /* eslint-enable @typescript-eslint/no-unnecessary-condition */
 
         // If we're at maxDepth, return empty object (children would exceed depth)
         if (currentDepth >= maxDepth) {
@@ -1255,7 +1348,6 @@ class ZodSchemaGenerator {
         for (const check of checks) {
             if (isStringFormatCheck(check)) {
                 const format = schemaHelpers.getCheckFormat(check);
-                // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check
                 switch (format) {
                     case 'email': {
                         return this.factory.internet.email();
@@ -1413,9 +1505,7 @@ class ZodSchemaGenerator {
     }
 
     private tryGenerateFromMetadata(schema: ZodType): unknown {
-        const metadata =
-            // eslint-disable-next-line @typescript-eslint/unbound-method
-            isFunction(schema.meta) ? schema.meta() : undefined;
+        const metadata = isFunction(schema.meta) ? schema.meta() : undefined;
         if (!metadata) {
             return undefined;
         }
@@ -1446,15 +1536,18 @@ class ZodSchemaGenerator {
         schema: ZodType,
         currentDepth: number,
     ): unknown {
-        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
         const def = schemaHelpers.getDef(schema);
         if (!def) {
             return undefined;
         }
 
+        const type = getProperty(def, ['type']) as string | undefined;
+        if (!type) {
+            return undefined;
+        }
+
         const typeName =
-            builtinTypeMapping[def.type as keyof typeof builtinTypeMapping];
-        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
+            builtinTypeMapping[type as keyof typeof builtinTypeMapping];
 
         if (this.typeHandlers.has(typeName)) {
             return this.typeHandlers.get(typeName)!(schema, this, currentDepth);

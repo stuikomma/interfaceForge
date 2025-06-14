@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-deprecated */
 import { z } from 'zod/v4';
 import { ZodFactory } from 'interface-forge/zod';
 
@@ -7,7 +6,7 @@ const UserRegistrationSchema = z
     .object({
         acceptTerms: z.boolean(),
         confirmPassword: z.string(),
-        email: z.string().email(),
+        email: z.email(),
         marketingEmails: z.boolean().default(false),
         password: z.string().min(8).regex(/[A-Z]/).regex(/[0-9]/),
         profile: z.object({
@@ -57,8 +56,8 @@ const ApiResponseSchema = z.object({
         }),
         users: z.array(
             z.object({
-                email: z.string().email(),
-                id: z.string().uuid(),
+                email: z.email(),
+                id: z.uuid(),
                 lastSeen: z.date().nullable(),
                 name: z.string(),
                 role: z.enum(['admin', 'user', 'guest']),
