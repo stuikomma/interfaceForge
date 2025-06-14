@@ -9,7 +9,7 @@ import {
 } from '@tool-belt/type-predicates';
 import { ConfigurationError } from './errors';
 import { CycleGenerator, SampleGenerator } from './generators';
-import { merge, Ref } from './utils';
+import { merge, Ref, validateBatchSize } from './utils';
 import { DEFAULT_MAX_DEPTH } from './constants';
 
 export {
@@ -544,71 +544,124 @@ export class Factory<
         return new Ref({ args, handler }) as R;
     }
 
+    /**
+     * @internal
+     * @param depth - Current depth in recursive generation
+     * @param isAsync - Whether to create async handlers
+     * @returns Depth-limited proxy factory for recursive generation
+     */
+    protected createDepthLimitedProxy(
+        depth: number,
+        isAsync: boolean,
+    ): Factory<T> {
+        return new Proxy(this, {
+            get: (target, prop) => {
+                if (prop === 'build') {
+                    return isAsync
+                        ? async (buildKwargs?: Partial<T>) =>
+                              target.#generateAsync(0, buildKwargs, depth + 1)
+                        : (buildKwargs?: Partial<T>) =>
+                              target.#generate(0, buildKwargs, depth + 1);
+                }
+                if (prop === 'batch') {
+                    return isAsync
+                        ? async (
+                              size: number,
+                              batchKwargs?: Partial<T> | Partial<T>[],
+                          ) =>
+                              this.#batchAsync(target, size, batchKwargs, depth)
+                        : (
+                              size: number,
+                              batchKwargs?: Partial<T> | Partial<T>[],
+                          ) => this.#batch(target, size, batchKwargs, depth);
+                }
+                return Reflect.get(target, prop);
+            },
+        }) as Factory<T>;
+    }
+
+    /**
+     * @internal
+     * @param depth - Current depth in recursive generation
+     * @returns True if depth exceeds maximum allowed depth
+     */
+    protected isDepthExceeded(depth: number): boolean {
+        return depth >= (this.options?.maxDepth ?? DEFAULT_MAX_DEPTH);
+    }
+
+    #batch(
+        target: Factory<T>,
+        size: number,
+        batchKwargs: Partial<T> | Partial<T>[] | undefined,
+        depth: number,
+    ): T[] {
+        if (this.isDepthExceeded(depth + 1)) {
+            return null as unknown as T[];
+        }
+        validateBatchSize(size);
+        if (size === 0) {
+            return [];
+        }
+        if (batchKwargs) {
+            const generator = target.iterate<Partial<T>>(
+                Array.isArray(batchKwargs)
+                    ? batchKwargs
+                    : ([batchKwargs] as Partial<T>[]),
+            );
+            return new Array(size)
+                .fill(null)
+                .map((_, i) =>
+                    target.#generate(i, generator.next().value, depth + 1),
+                ) as T[];
+        }
+        return new Array(size)
+            .fill(null)
+            .map((_, i) => target.#generate(i, undefined, depth + 1)) as T[];
+    }
+
+    async #batchAsync(
+        target: Factory<T>,
+        size: number,
+        batchKwargs: Partial<T> | Partial<T>[] | undefined,
+        depth: number,
+    ): Promise<T[]> {
+        if (this.isDepthExceeded(depth + 1)) {
+            return null as unknown as T[];
+        }
+        validateBatchSize(size);
+        if (size === 0) {
+            return [];
+        }
+        if (batchKwargs) {
+            const generator = target.iterate<Partial<T>>(
+                Array.isArray(batchKwargs)
+                    ? batchKwargs
+                    : ([batchKwargs] as Partial<T>[]),
+            );
+            const promises = new Array(size)
+                .fill(null)
+                .map((_, i) =>
+                    target.#generateAsync(i, generator.next().value, depth + 1),
+                );
+            return Promise.all(promises);
+        }
+        const promises = new Array(size)
+            .fill(null)
+            .map((_, i) => target.#generateAsync(i, undefined, depth + 1));
+        return Promise.all(promises);
+    }
+
     #generate(
         iteration: number,
         kwargs?: Partial<T>,
         depth = 0,
     ): Promise<T> | T {
-        if (depth >= (this.options?.maxDepth ?? DEFAULT_MAX_DEPTH)) {
+        if (this.isDepthExceeded(depth)) {
             return null as T;
         }
 
-        const depthLimitedFactory = new Proxy(this, {
-            get(target, prop) {
-                if (prop === 'build') {
-                    return (buildKwargs?: Partial<T>) =>
-                        target.#generate(0, buildKwargs, depth + 1);
-                }
-                if (prop === 'batch') {
-                    return (
-                        size: number,
-                        batchKwargs?: Partial<T> | Partial<T>[],
-                    ) => {
-                        if (
-                            depth + 1 >=
-                            (target.options?.maxDepth ?? DEFAULT_MAX_DEPTH)
-                        ) {
-                            return null;
-                        }
-                        if (!Number.isInteger(size) || size < 0) {
-                            throw new Error(
-                                'Batch size must be a non-negative integer',
-                            );
-                        }
-                        if (size === 0) {
-                            return [];
-                        }
-                        if (batchKwargs) {
-                            const generator = target.iterate<Partial<T>>(
-                                Array.isArray(batchKwargs)
-                                    ? batchKwargs
-                                    : ([batchKwargs] as Partial<T>[]),
-                            );
-                            return new Array(size)
-                                .fill(null)
-                                .map((_, i) =>
-                                    target.#generate(
-                                        i,
-                                        generator.next().value,
-                                        depth + 1,
-                                    ),
-                                );
-                        }
-                        return new Array(size)
-                            .fill(null)
-                            .map((_, i) =>
-                                target.#generate(i, undefined, depth + 1),
-                            );
-                    };
-                }
-                return Reflect.get(target, prop);
-            },
-        });
-
-        const defaults = this.factory(
-            depthLimitedFactory as Factory<T>,
-            iteration,
-        );
+        const depthLimitedFactory = this.createDepthLimitedProxy(depth, false);
+        const defaults = this.factory(depthLimitedFactory, iteration);
 
         if (kwargs) {
             return merge(
@@ -625,68 +678,12 @@ export class Factory<
         kwargs?: Partial<T>,
         depth = 0,
     ): Promise<T> {
-        if (depth >= (this.options?.maxDepth ?? DEFAULT_MAX_DEPTH)) {
+        if (this.isDepthExceeded(depth)) {
             return null as T;
         }
 
-        const depthLimitedFactory = new Proxy(this, {
-            get(target, prop) {
-                if (prop === 'build') {
-                    return async (buildKwargs?: Partial<T>) =>
-                        target.#generateAsync(0, buildKwargs, depth + 1);
-                }
-                if (prop === 'batch') {
-                    return async (
-                        size: number,
-                        batchKwargs?: Partial<T> | Partial<T>[],
-                    ) => {
-                        if (
-                            depth + 1 >=
-                            (target.options?.maxDepth ?? DEFAULT_MAX_DEPTH)
-                        ) {
-                            return null;
-                        }
-                        if (!Number.isInteger(size) || size < 0) {
-                            throw new Error(
-                                'Batch size must be a non-negative integer',
-                            );
-                        }
-                        if (size === 0) {
-                            return [];
-                        }
-                        if (batchKwargs) {
-                            const generator = target.iterate<Partial<T>>(
-                                Array.isArray(batchKwargs)
-                                    ? batchKwargs
-                                    : ([batchKwargs] as Partial<T>[]),
-                            );
-                            const promises = new Array(size)
-                                .fill(null)
-                                .map((_, i) =>
-                                    target.#generateAsync(
-                                        i,
-                                        generator.next().value,
-                                        depth + 1,
-                                    ),
-                                );
-                            return Promise.all(promises);
-                        }
-                        const promises = new Array(size)
-                            .fill(null)
-                            .map((_, i) =>
-                                target.#generateAsync(i, undefined, depth + 1),
-                            );
-                        return Promise.all(promises);
-                    };
-                }
-                return Reflect.get(target, prop);
-            },
-        });
-
-        const defaults = await this.factory(
-            depthLimitedFactory as Factory<T>,
-            iteration,
-        );
+        const depthLimitedFactory = this.createDepthLimitedProxy(depth, true);
+        const defaults = await this.factory(depthLimitedFactory, iteration);
 
         if (kwargs) {
             return merge(

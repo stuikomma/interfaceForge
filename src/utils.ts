@@ -113,3 +113,15 @@ export function merge<T>(target: T, ...sources: unknown[]): T {
 
     return output as T;
 }
+
+/**
+ * Validates that a value is a valid batch size (non-negative integer).
+ *
+ * @param size The size to validate
+ * @throws {Error} If size is not a non-negative integer
+ */
+export function validateBatchSize(size: number): void {
+    if (!Number.isInteger(size) || size < 0) {
+        throw new Error('Batch size must be a non-negative integer');
+    }
+}

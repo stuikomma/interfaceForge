@@ -6,6 +6,7 @@ import {
     iterableToArray,
     merge,
     Ref,
+    validateBatchSize,
 } from './utils';
 
 describe('Utils', () => {
@@ -230,6 +231,48 @@ describe('Utils', () => {
             const obj = { arr: [1, 2, { nested: 'value' }] };
             expect(getProperty(obj, ['arr', '0'])).toBe(1);
             expect(getProperty(obj, ['arr', '2', 'nested'])).toBe('value');
+        });
+    });
+
+    describe('validateBatchSize', () => {
+        it('accepts valid batch sizes', () => {
+            expect(() => validateBatchSize(0)).not.toThrow();
+            expect(() => validateBatchSize(1)).not.toThrow();
+            expect(() => validateBatchSize(10)).not.toThrow();
+            expect(() => validateBatchSize(1000)).not.toThrow();
+        });
+
+        it('rejects negative numbers', () => {
+            expect(() => validateBatchSize(-1)).toThrow(
+                'Batch size must be a non-negative integer',
+            );
+            expect(() => validateBatchSize(-10)).toThrow(
+                'Batch size must be a non-negative integer',
+            );
+        });
+
+        it('rejects non-integer numbers', () => {
+            expect(() => validateBatchSize(1.5)).toThrow(
+                'Batch size must be a non-negative integer',
+            );
+            expect(() => validateBatchSize(0.1)).toThrow(
+                'Batch size must be a non-negative integer',
+            );
+            expect(() => validateBatchSize(Math.PI)).toThrow(
+                'Batch size must be a non-negative integer',
+            );
+        });
+
+        it('rejects NaN and Infinity', () => {
+            expect(() => validateBatchSize(Number.NaN)).toThrow(
+                'Batch size must be a non-negative integer',
+            );
+            expect(() => validateBatchSize(Infinity)).toThrow(
+                'Batch size must be a non-negative integer',
+            );
+            expect(() => validateBatchSize(-Infinity)).toThrow(
+                'Batch size must be a non-negative integer',
+            );
         });
     });
 });

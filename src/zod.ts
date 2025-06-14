@@ -88,7 +88,12 @@ import {
     isObject,
 } from '@tool-belt/type-predicates';
 import { PartialFactoryFunction } from './types';
-import { DEFAULT_MAX_DEPTH } from './constants';
+import {
+    COLLECTION_SIZES,
+    DEFAULT_MAX_DEPTH,
+    NUMBER_CONSTRAINTS,
+    STRING_LENGTHS,
+} from './constants';
 import { getProperty, hasMethod, hasProperty, merge } from './utils';
 
 /**
@@ -132,6 +137,22 @@ const schemaHelpers = {
             return v3Kind;
         }
         return getProperty(check, ['format']) as string | undefined;
+    },
+
+    /**
+     * Get inclusive flag from a check, handling both v3 and v4
+     *
+     * @param check
+     * @returns The inclusive flag or false as default
+     */
+    getCheckInclusive(check: unknown): boolean {
+        const v4Inclusive = getProperty(check, ['_zod', 'def', 'inclusive']) as
+            | boolean
+            | undefined;
+        const v3Inclusive = getProperty(check, ['inclusive']) as
+            | boolean
+            | undefined;
+        return v4Inclusive ?? v3Inclusive ?? false;
     },
 
     /**
@@ -726,7 +747,7 @@ class ZodSchemaGenerator {
         ulid: (generator: ZodSchemaGenerator) => {
             const chars = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
             let ulid = '';
-            for (let i = 0; i < 26; i++) {
+            for (let i = 0; i < STRING_LENGTHS.ULID; i++) {
                 // eslint-disable-next-line @typescript-eslint/no-misused-spread
                 ulid += generator.factory.helpers.arrayElement([...chars]);
             }
@@ -739,7 +760,7 @@ class ZodSchemaGenerator {
         xid: (generator: ZodSchemaGenerator) => {
             const chars = '0123456789abcdefghijklmnopqrstuv';
             let xid = '';
-            for (let i = 0; i < 20; i++) {
+            for (let i = 0; i < STRING_LENGTHS.XID; i++) {
                 // eslint-disable-next-line @typescript-eslint/no-misused-spread
                 xid += generator.factory.helpers.arrayElement([...chars]);
             }
@@ -1223,7 +1244,10 @@ class ZodSchemaGenerator {
             | undefined
             | ZodType;
         const map = new Map();
-        const size = this.factory.number.int({ max: 5, min: 1 });
+        const size = this.factory.number.int({
+            max: COLLECTION_SIZES.DEFAULT_MAP_MAX,
+            min: COLLECTION_SIZES.DEFAULT_MAP_MIN,
+        });
 
         if (!keyType || !valueType) {
             return map;
@@ -1244,32 +1268,20 @@ class ZodSchemaGenerator {
 
         for (const check of checks) {
             if (isLessThanCheck(check)) {
-                const v4Inclusive = getProperty(check, [
-                    '_zod',
-                    'def',
-                    'inclusive',
-                ]) as boolean | undefined;
-                const v3Inclusive = getProperty(check, ['inclusive']) as
-                    | boolean
-                    | undefined;
-                const inclusive = v4Inclusive ?? v3Inclusive ?? false;
+                const inclusive = schemaHelpers.getCheckInclusive(check);
                 const value = schemaHelpers.getCheckValue(check);
                 if (typeof value === 'number') {
-                    constraints.max = inclusive ? value : value - 0.000_001;
+                    constraints.max = inclusive
+                        ? value
+                        : value - NUMBER_CONSTRAINTS.PRECISION_OFFSET;
                 }
             } else if (isGreaterThanCheck(check)) {
-                const v4Inclusive = getProperty(check, [
-                    '_zod',
-                    'def',
-                    'inclusive',
-                ]) as boolean | undefined;
-                const v3Inclusive = getProperty(check, ['inclusive']) as
-                    | boolean
-                    | undefined;
-                const inclusive = v4Inclusive ?? v3Inclusive ?? false;
+                const inclusive = schemaHelpers.getCheckInclusive(check);
                 const value = schemaHelpers.getCheckValue(check);
                 if (typeof value === 'number') {
-                    constraints.min = inclusive ? value : value + 0.000_001;
+                    constraints.min = inclusive
+                        ? value
+                        : value + NUMBER_CONSTRAINTS.PRECISION_OFFSET;
                 }
             } else if (isMultipleOfCheck(check)) {
                 const value = schemaHelpers.getCheckValue(check);
@@ -1305,14 +1317,14 @@ class ZodSchemaGenerator {
                 : hasStepWithoutMin
                   ? 0
                   : isInt
-                    ? -1000
-                    : -1000;
+                    ? NUMBER_CONSTRAINTS.DEFAULT_INT_MIN
+                    : NUMBER_CONSTRAINTS.DEFAULT_MIN;
         const safeMax =
             max !== undefined && Number.isFinite(max)
                 ? max
                 : isInt
-                  ? 1000
-                  : 1000;
+                  ? NUMBER_CONSTRAINTS.DEFAULT_INT_MAX
+                  : NUMBER_CONSTRAINTS.DEFAULT_MAX;
 
         const options = { max: safeMax, min: safeMin };
         let result = isInt
@@ -1382,7 +1394,10 @@ class ZodSchemaGenerator {
         const def = schemaHelpers.getDef(schema);
         const keyType = getProperty(def, ['keyType']) as undefined | ZodType;
         const valueType = schemaHelpers.getRecordValueType(schema);
-        const numKeys = this.factory.number.int({ max: 3, min: 1 });
+        const numKeys = this.factory.number.int({
+            max: COLLECTION_SIZES.DEFAULT_RECORD_MAX,
+            min: COLLECTION_SIZES.DEFAULT_RECORD_MIN,
+        });
         const result: Record<string, unknown> = {};
 
         if (!valueType) {
@@ -1405,7 +1420,10 @@ class ZodSchemaGenerator {
             | undefined
             | ZodType;
         const set = new Set();
-        const size = this.factory.number.int({ max: 5, min: 1 });
+        const size = this.factory.number.int({
+            max: COLLECTION_SIZES.DEFAULT_SET_MAX,
+            min: COLLECTION_SIZES.DEFAULT_SET_MIN,
+        });
 
         if (!valueType) {
             return set;
