@@ -1,7 +1,7 @@
 import { z as zv3 } from 'zod';
 import { ZodFactory } from './zod';
 
-describe.skip('ZodFactory Zod v3 Compatibility', () => {
+describe('ZodFactory Zod v3 Compatibility', () => {
     describe('Basic Schema Types', () => {
         it('should work with v3 string schemas', () => {
             const schema = zv3.object({
