@@ -86,7 +86,7 @@ yarn add zod
 pnpm add zod
 ```
 
-**Note**: ZodFactory supports both Zod v3 and v4. Install your preferred version - both are fully compatible with Interface-Forge.
+**Note**: ZodFactory supports both Zod v3 and v4.
 
 ## Basic Example
 
