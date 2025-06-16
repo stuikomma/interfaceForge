@@ -9,9 +9,9 @@ import {
 } from '@tool-belt/type-predicates';
 import { ConfigurationError } from './errors';
 import { CycleGenerator, SampleGenerator } from './generators';
-import { PersistenceAdapter } from './persistence-adapter';
 import { merge, Ref, validateBatchSize } from './utils';
 import { DEFAULT_MAX_DEPTH } from './constants';
+import { PersistenceAdapter } from './persistence-adapter';
 
 export * from '../examples/adapters/mongoose-adapter';
 export * from '../examples/adapters/prisma-adapter';
@@ -35,9 +35,7 @@ export type FactoryFunction<T> = (
 
 export interface FactoryOptions {
     locale?: LocaleDefinition | LocaleDefinition[];
-
     maxDepth?: number;
-
     randomizer?: Randomizer;
 }
 
@@ -117,8 +115,8 @@ class TypeORMAdapter<T> implements PersistenceAdapter<T> {
  * with support for circular references through depth control and persistence.
  *
  * @template T - The type of objects this factory generates
+ * @template O - The type of factory options
  */
-
 export class Factory<
     T,
     O extends FactoryOptions = FactoryOptions,
@@ -130,9 +128,7 @@ export class Factory<
     protected afterBuildHooks: AfterBuildHook<T>[] = [];
     protected beforeBuildHooks: BeforeBuildHook<T>[] = [];
     protected readonly factory: FactoryFunction<T>;
-    private readonly maxDepth: number;
     private persistenceAdapter?: PersistenceAdapter<T>;
-
 
     constructor(
         factory: FactoryFunction<T>,
@@ -144,7 +140,10 @@ export class Factory<
         });
 
         this.factory = factory;
-        this.options = { ...rest, maxDepth: rest.maxDepth ?? 10 } as {
+        this.options = {
+            ...rest,
+            maxDepth: rest.maxDepth ?? DEFAULT_MAX_DEPTH,
+        } as {
             maxDepth: number;
         } & Omit<O, 'locale' | 'maxDepth' | 'randomizer'>;
     }
@@ -240,41 +239,6 @@ export class Factory<
      * @param kwargs Properties to override in the generated instance
      * @returns A new instance with factory-generated values merged with any overrides
      * @throws {ConfigurationError} If async hooks are registered
-
-     */
-
-     *
-     * @example
-     * const UserFactory = new Factory<User>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     name: factory.person.fullName(),
-     *     email: factory.internet.email(),
-     * }));
-     *
-     * // Build with defaults
-     * const user = UserFactory.build();
-     *
-     * // Build with overrides
-     * const adminUser = UserFactory.build({
-     *     email: 'admin@example.com'
-     * });
-     *
-     * // With synchronous hooks
-     * const FactoryWithHooks = new Factory<User>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     name: factory.person.fullName(),
-     *     email: ''
-     * }))
-     * .beforeBuild((params) => {
-     *     params.email = params.email ?? 'default@example.com';
-     *     return params;
-     * })
-     * .afterBuild((user) => {
-     *     user.email = user.email.toLowerCase();
-     *     return user;
-     * });
-     *
-     * const userWithHooks = FactoryWithHooks.build(); // Hooks are applied automatically
      */
     build = (kwargs?: Partial<T>): T => {
         if (isAsyncFunction(this.factory)) {
@@ -409,7 +373,9 @@ export class Factory<
             );
         }
 
-        const instances = this.batch(size, kwargs);
+        const instances = await (isAsyncFunction(this.factory)
+            ? this.#batchAsync(this, size, kwargs, 0)
+            : this.#batch(this, size, kwargs, 0));
         return this.persistenceAdapter.createMany(instances);
     }
 
@@ -501,7 +467,7 @@ export class Factory<
 
     /**
      * Creates a generator that yields random values from an iterable without consecutive duplicates.
-     * Each value is randomly selected with a replacement, but the generator ensures the same value
+     * Each value is randomly selected with replacement, but the generator ensures the same value
      * is never returned twice in a row (unless the iterable contains only one element).
      *
      * @template T The type of elements in the iterable
@@ -528,13 +494,18 @@ export class Factory<
         return new Ref({ args, handler }) as R;
     }
 
-    #generate(iteration: number, kwargs?: Partial<T>, depth = 0): T {
-        if (depth >= this.maxDepth) {
-            return null as T;
-        }
-
-        const depthLimitedFactory = new Proxy(this, {
-            get(target, prop) {
+    /**
+     * @internal
+     * @param depth - Current depth in recursive generation
+     * @param isAsync - Whether to create async handlers
+     * @returns Depth-limited proxy factory for recursive generation
+     */
+    protected createDepthLimitedProxy(
+        depth: number,
+        isAsync: boolean,
+    ): Factory<T> {
+        return new Proxy(this, {
+            get: (target, prop) => {
                 if (prop === 'build') {
                     return isAsync
                         ? async (buildKwargs?: Partial<T>) =>
