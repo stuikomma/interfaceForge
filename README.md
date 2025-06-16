@@ -1,30 +1,39 @@
-# Interface-Forge
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Goldziher/interface-forge/main/assets/logo.svg" alt="Interface-Forge Logo" width="120" height="120">
+  
+  # Interface-Forge
 
 [![npm version](https://img.shields.io/npm/v/interface-forge.svg)](https://www.npmjs.com/package/interface-forge)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org/)
 [![Downloads](https://img.shields.io/npm/dm/interface-forge.svg)](https://www.npmjs.com/package/interface-forge)
 
-Interface-Forge is a TypeScript library for creating strongly typed mock data factories. This library builds upon [Faker.js](https://fakerjs.dev/) by providing a simple and intuitive `Factory` class that extends the `Faker` class from [Faker.js](https://fakerjs.dev/).
+</div>
+
+Interface-Forge is a TypeScript library for creating strongly typed mock data factories. Built on top of [Faker.js](https://fakerjs.dev/), it provides a powerful `Factory` class that combines Faker's data generation capabilities with TypeScript's type safety, advanced composition patterns, and optional [Zod](https://zod.dev/) schema integration.
+
+📚 **[View Full Documentation](https://goldziher.github.io/interface-forge/)**
 
 ## Why Interface-Forge?
 
-- **Type-Safe by Design**: Full TypeScript support with compile-time type checking for all your test data
-- **Zero Learning Curve**: Extends Faker.js, so all Faker methods work out of the box—if you know Faker, you know Interface-Forge
-- **Powerful Composition**: Build complex object graphs with circular references using the `use()` method for lazy evaluation
-- **Flexible Overrides**: Easily customize any part of your generated data with the `build({ ... })` method
-- **Built for Testing**: Generate single instances, batches, or compose factories together—perfect for unit tests, integration tests, and storybooks
-
-📚 **[View Full API Documentation](https://goldziher.github.io/interface-forge/)**
+- **🔒 Type-Safe by Design**: Full TypeScript support with compile-time type checking for all your test data
+- **🚀 Zero Learning Curve**: Extends Faker.js, so all Faker methods work out of the box—if you know Faker, you know Interface-Forge
+- **🔄 Powerful Composition**: Build complex object graphs with circular references using the `use()` method for lazy evaluation
+- **🎯 Flexible Overrides**: Easily customize any part of your generated data with the `build({ ... })` method
+- **🧪 Built for Testing**: Generate single instances, batches, or compose factories together—perfect for unit tests, integration tests, and storybooks
+- **📐 Zod Integration**: Generate mock data directly from your Zod schemas with automatic type inference
+- **🔗 Hooks & Transforms**: Use `beforeBuild` and `afterBuild` hooks to transform data, validate business rules, or fetch async data
+- **🎲 Deterministic Mode**: Seed your factories for reproducible test data across runs
 
 📂 **[Browse Example Code](./examples)** - See Interface-Forge in action with practical examples
 
 ## Table of Contents
 
 - [Interface-Forge](#interface-forge)
-    - [Table of Contents](#table-of-contents)
+    - [Why Interface-Forge?](#why-interface-forge)
     - [Installation](#installation)
     - [Basic Example](#basic-example)
+    - [Extending Factory](#extending-factory)
     - [API Reference](#api-reference)
         - [Factory Class Methods](#factory-class-methods)
             - [`build`](#build)
@@ -34,8 +43,18 @@ Interface-Forge is a TypeScript library for creating strongly typed mock data fa
             - [`sample`](#sample)
             - [`extend`](#extend)
             - [`compose`](#compose)
+            - [`beforeBuild`](#beforebuild)
+            - [`afterBuild`](#afterbuild)
+            - [`buildAsync`](#buildasync)
+            - [`seed`](#seed)
     - [TypeScript Compatibility](#typescript-compatibility)
     - [Faker.js Integration](#fakerjs-integration)
+    - [Zod Integration](#zod-integration)
+        - [Basic Zod Usage](#basic-zod-usage)
+        - [Partial Factory Functions](#partial-factory-functions)
+        - [Advanced Zod Features](#advanced-zod-features)
+    - [Performance Considerations](#performance-considerations)
+    - [Common Patterns](#common-patterns)
     - [Contributing](#contributing)
     - [License](#license)
 
@@ -53,6 +72,21 @@ yarn add --dev interface-forge
 # pnpm
 pnpm add --save-dev interface-forge
 ```
+
+For Zod integration (optional):
+
+```shell
+# npm
+npm install zod
+
+# yarn
+yarn add zod
+
+# pnpm
+pnpm add zod
+```
+
+**Note**: ZodFactory supports both Zod v3 and v4.
 
 ## Basic Example
 
@@ -111,6 +145,31 @@ describe('User', () => {
     // }
     // ...
 });
+```
+
+## Extending Factory
+
+Interface-Forge allows you to extend the base Factory class to add custom functionality:
+
+```typescript
+class CustomFactory<T> extends Factory<T> {
+    // Add custom methods
+    buildWithTimestamp(): T & { timestamp: Date } {
+        const instance = this.build();
+        return { ...instance, timestamp: new Date() };
+    }
+
+    // Override existing methods
+    build(kwargs?: Partial<T>): T {
+        console.log('Building instance...');
+        return super.build(kwargs);
+    }
+}
+
+const factory = new CustomFactory<User>((f) => ({
+    /* ... */
+}));
+const userWithTimestamp = factory.buildWithTimestamp();
 ```
 
 ## API Reference
@@ -460,6 +519,29 @@ const user = await UserFactory.buildAsync();
 - Hooks are executed in the order they were registered
 - Multiple hooks of the same type can be chained
 
+### Additional Methods
+
+#### `seed`
+
+Sets the seed for the random number generator to create deterministic data:
+
+**Signature:**
+
+```typescript
+seed(seed: number): this
+```
+
+**Usage:**
+
+```typescript
+const factory = new Factory<User>(/* ... */);
+factory.seed(12345);
+
+// Will always generate the same data for the same seed
+const user1 = factory.build();
+const user2 = factory.build();
+```
+
 ## TypeScript Compatibility
 
 Interface-Forge is designed to work with TypeScript 5.x and above. It leverages TypeScript's type system to provide type safety and autocompletion for your factories.
@@ -468,16 +550,497 @@ Interface-Forge is designed to work with TypeScript 5.x and above. It leverages 
 
 Interface-Forge extends the Faker class from Faker.js, giving you access to all Faker.js functionalities directly from your factory instance. This means you can use any Faker.js method to generate data for your factory.
 
-For example:
+**Example:**
 
+```typescript
 const UserFactory = new Factory<User>((factory) => ({
-// Using Faker.js methods directly
-firstName: factory.person.firstName(),
-lastName: factory.person.lastName(),
-email: factory.internet.email(),
-// ... other properties
+    // Using Faker.js methods directly
+    firstName: factory.person.firstName(),
+    lastName: factory.person.lastName(),
+    email: factory.internet.email(),
+    avatar: factory.image.avatar(),
+    bio: factory.lorem.paragraph(),
+    // ... other properties
 }));
+```
+
 For more information about available Faker.js methods, see the [Faker.js documentation](https://fakerjs.dev/api/).
+
+## Zod Integration
+
+Interface-Forge provides seamless integration with [Zod](https://zod.dev/) schemas through the `ZodFactory` class. This allows you to generate mock data that automatically conforms to your Zod schema definitions.
+
+**Zod Version Support**: ZodFactory supports both Zod v3 and Zod v4 schemas automatically. The factory detects the schema version and handles the differences transparently:
+
+- **Zod v3**: Import schemas with `import { z } from 'zod'`
+- **Zod v4**: Import schemas with `import { z } from 'zod/v4'`
+
+Both versions work with the same ZodFactory API, so you can use existing v3 schemas without modification while also supporting newer v4 features.
+
+### Basic Zod Usage
+
+```typescript
+// Works with both Zod v3 and v4
+import { z } from 'zod'; // For Zod v3
+// OR
+import { z } from 'zod/v4'; // For Zod v4
+
+import { ZodFactory } from 'interface-forge/zod';
+
+const UserSchema = z.object({
+    id: z.string().uuid(),
+    name: z.string().min(1).max(100),
+    email: z.string().email(),
+    age: z.number().int().min(18).max(120),
+    isActive: z.boolean(),
+    role: z.enum(['admin', 'user', 'guest']),
+});
+
+const userFactory = new ZodFactory(UserSchema);
+const user = userFactory.build();
+// Automatically generates data that conforms to the schema
+```
+
+### Partial Factory Functions
+
+The `ZodFactory` supports **partial factory functions**, allowing you to customize only specific fields while automatically generating the rest from the schema:
+
+```typescript
+import { z } from 'zod'; // Works with both v3 and v4
+import { ZodFactory } from 'interface-forge/zod';
+
+const UserSchema = z.object({
+    id: z.uuid(),
+    name: z.string(),
+    email: z.email(),
+    role: z.enum(['admin', 'user', 'guest']),
+    createdAt: z.date(),
+    settings: z.object({
+        theme: z.enum(['light', 'dark']),
+        notifications: z.boolean(),
+    }),
+});
+
+// Partial factory function - only customize what you need
+const userFactory = new ZodFactory(UserSchema, (factory) => ({
+    // Only customize these fields for deterministic test data
+    role: 'user', // Always create regular users
+    name: factory.person.fullName(),
+    settings: {
+        theme: 'light', // Always use light theme in tests
+        // notifications will be auto-generated from schema
+    },
+    // id, email, createdAt will be auto-generated from schema
+}));
+
+const user = userFactory.build();
+// user.role === 'user' (from factory)
+// user.name === 'John Doe' (from factory)
+// user.settings.theme === 'light' (from factory)
+// user.settings.notifications === true/false (auto-generated)
+// user.id === uuid (auto-generated)
+// user.email === valid email (auto-generated)
+// user.createdAt === Date (auto-generated)
+```
+
+### Benefits of Partial Factory Functions
+
+- **Deterministic where needed**: Customize specific fields for predictable test data
+- **Automatic coverage**: Missing fields are automatically generated from the schema
+- **Type safety**: Full TypeScript support with schema validation
+- **Intuitive**: Only specify what you care about, let ZodFactory handle the rest
+
+### Advanced Zod Features
+
+#### Complex Type Support
+
+ZodFactory supports all major Zod types including:
+
+- Primitives (string, number, boolean, date, etc.)
+- Complex types (objects, arrays, tuples, records, maps, sets)
+- Unions and discriminated unions
+- Enums (both native and Zod enums)
+- Nullable and optional fields
+- Recursive schemas with depth control
+- Refinements and constraints
+
+#### Custom Generators
+
+Register custom generators for specific field types:
+
+```typescript
+const factory = new ZodFactory(UserSchema, {
+    generators: {
+        userId: () => `USR_${Date.now()}`,
+        customEmail: (faker) =>
+            `test_${faker.string.alphanumeric(5)}@example.com`,
+    },
+});
+```
+
+#### Custom Type Handlers
+
+For advanced customization, register custom handlers for specific Zod types:
+
+```typescript
+import { z } from 'zod';
+import { ZodFactory } from 'interface-forge/zod';
+
+const factory = new ZodFactory(UserSchema)
+    // Single type handler
+    .withTypeHandler('ZodFunction', () => () => 'mock function')
+    // Multiple type handlers
+    .withTypeHandlers({
+        ZodPromise: (schema, generator) => Promise.resolve('mock result'),
+        ZodBigInt: () => BigInt(42),
+        ZodCustomType: (schema, generator, depth) => 'custom value',
+    });
+```
+
+**Required for Functions and Promises**: Zod `z.function()` and `z.promise()` schemas require custom type handlers as they cannot be automatically generated:
+
+```typescript
+const SchemaWithFunction = z.object({
+    callback: z.function(),
+    asyncResult: z.promise(z.string()),
+});
+
+const factory = new ZodFactory(SchemaWithFunction)
+    .withTypeHandler('ZodFunction', () => jest.fn())
+    .withTypeHandler('ZodPromise', () => Promise.resolve('test result'));
+```
+
+#### Schema Validation
+
+All generated data is guaranteed to be valid according to your Zod schema, including:
+
+- String patterns and length constraints
+- Number ranges and precision
+- Array length requirements
+- Custom refinements
+
+### TypeScript Note
+
+When using partial factory functions, TypeScript may show errors because it doesn't recognize that ZodFactory will auto-generate missing required fields. This is a known limitation. Your code will work correctly at runtime, but you may need to use type assertions in some cases:
+
+```typescript
+const factory = new ZodFactory(
+    Schema,
+    (faker) =>
+        ({
+            // Only some fields defined here
+        }) as any,
+); // Type assertion if needed
+```
+
+### Complete Examples
+
+**Factory Examples**:
+
+- [Basic Usage](./examples/01-basic-usage.ts) - Getting started with factories
+- [Advanced Composition](./examples/02-advanced-composition.ts) - Complex object relationships
+- [Testing Patterns](./examples/03-testing-examples.ts) - Real-world testing scenarios
+- [Circular References](./examples/04-circular-references.ts) - Handling complex relationships
+- [Advanced Patterns](./examples/05-advanced-patterns.ts) - Sophisticated generation techniques
+- [Hooks & Validation](./examples/06-hooks-and-validation.ts) - Data transformation and validation
+- [Factory Extension](./examples/09-factory-extension.ts) - Using extend() for inheritance
+- [Generators Comparison](./examples/10-generators-comparison.ts) - iterate() vs sample() methods
+
+**ZodFactory Examples**:
+
+- [Basic Zod Usage](./examples/07-zod-basic.ts) - Simple schemas and API responses
+- [Advanced Zod Patterns](./examples/07-zod-integration.ts) - Complex schemas, unions, and recursion
+- [Testing with Zod](./examples/07-zod-testing.ts) - Real-world testing scenarios
+- [MaxDepth with Zod](./examples/08-zod-maxdepth.ts) - Handling depth limits in nested schemas
+- [Custom Type Handlers](./examples/11-zod-custom-handlers.ts) - Functions, promises, and custom types
+
+## Performance Considerations
+
+### Large Batch Generation
+
+When generating large batches, consider:
+
+- Memory usage grows linearly with batch size
+- Use streaming or chunking for very large datasets
+- Hooks are applied to each instance individually
+
+**Optimization Strategies**:
+
+```typescript
+// ❌ Inefficient: Large single batch
+const users = UserFactory.batch(10000); // High memory usage
+
+// ✅ Better: Chunked generation
+function* generateUsers(total: number, chunkSize: number = 1000) {
+    for (let i = 0; i < total; i += chunkSize) {
+        const remaining = Math.min(chunkSize, total - i);
+        yield UserFactory.batch(remaining);
+    }
+}
+
+// ✅ Best: Stream processing
+async function processUsers(count: number) {
+    for (const chunk of generateUsers(count)) {
+        await processChunk(chunk);
+        // Memory is freed between chunks
+    }
+}
+```
+
+### Memory Optimization
+
+**Factory Reuse**: Create factories once and reuse them:
+
+```typescript
+// ❌ Creates new factory each time
+function createUser() {
+    return new Factory<User>(() => ({
+        /* schema */
+    })).build();
+}
+
+// ✅ Reuse factory instance
+const UserFactory = new Factory<User>(() => ({
+    /* schema */
+}));
+function createUser() {
+    return UserFactory.build();
+}
+```
+
+**Deterministic Data**: Use `seed()` for consistent memory patterns:
+
+```typescript
+// Consistent memory usage across test runs
+const factory = UserFactory.seed(12345);
+const users = factory.batch(1000);
+```
+
+### Recursive Schemas and MaxDepth Behavior
+
+For recursive or circular data structures:
+
+- Use `maxDepth` option to limit recursion (especially with Zod)
+- Prefer `use()` for lazy evaluation to avoid infinite loops
+- Consider memory implications of deeply nested structures
+
+#### Important: MaxDepth with Zod Schemas
+
+When using `maxDepth` with ZodFactory, be aware that the factory returns empty objects `{}` when the depth limit is reached. This can cause Zod validation to fail if your schema has required nested fields at the depth limit:
+
+```typescript
+// ❌ Problematic: Required nested objects will fail validation
+const ProblematicSchema = z.object({
+    level1: z.object({
+        level2: z.object({
+            level3: z.object({
+                level4: z.object({
+                    value: z.string(), // Required field
+                }),
+            }),
+        }),
+    }),
+});
+
+const factory = new ZodFactory(ProblematicSchema, { maxDepth: 3 });
+// This will throw a ZodError because level4 will be an empty object
+// missing the required 'value' field
+
+// ✅ Better: Use optional for deeply nested objects
+const CompatibleSchema = z.object({
+    level1: z.object({
+        level2: z.object({
+            level3: z.object({
+                level4: z
+                    .object({
+                        value: z.string(),
+                    })
+                    .optional(), // Make deep nesting optional
+            }),
+        }),
+    }),
+});
+
+const factory = new ZodFactory(CompatibleSchema, { maxDepth: 3 });
+const result = factory.build(); // Works correctly
+
+// ✅ Best: Design recursive schemas with optional children
+const RecursiveSchema = z.lazy(() =>
+    z.object({
+        name: z.string(),
+        children: z.array(RecursiveSchema).optional(), // Self-referencing with optional
+    }),
+);
+
+const recursiveFactory = new ZodFactory(RecursiveSchema, { maxDepth: 3 });
+```
+
+## Error Handling
+
+### Factory Error Types
+
+Interface-Forge throws specific error types for different scenarios:
+
+```typescript
+import { ConfigurationError } from 'interface-forge';
+
+try {
+    // ❌ This will throw ConfigurationError
+    const factory = new Factory<User>((f) => ({
+        name: f.person.fullName(),
+        asyncData: Promise.resolve('data'), // Async data in sync factory
+    }));
+
+    factory.build(); // Throws: Cannot use build() with async factory functions
+} catch (error) {
+    if (error instanceof ConfigurationError) {
+        console.log('Configuration issue:', error.message);
+        // Use buildAsync() instead
+        const result = await factory.buildAsync();
+    }
+}
+```
+
+### ZodFactory Error Scenarios
+
+**Schema Validation Failures**:
+
+```typescript
+const StrictSchema = z.object({
+    email: z.string().email(),
+    age: z.number().min(18),
+});
+
+const factory = new ZodFactory(StrictSchema);
+
+try {
+    const user = factory.build({
+        email: 'invalid-email', // Will cause validation error
+    });
+} catch (error) {
+    console.log('Validation failed:', error.message);
+    // Handle validation errors gracefully
+}
+```
+
+**Missing Type Handlers**:
+
+```typescript
+const FunctionSchema = z.object({
+    callback: z.function(), // Requires custom handler
+});
+
+try {
+    const factory = new ZodFactory(FunctionSchema);
+    factory.build(); // Throws error
+} catch (error) {
+    console.log('Add type handler:', error.message);
+
+    // Fix by adding handler
+    const fixedFactory = factory.withTypeHandler('ZodFunction', () =>
+        jest.fn(),
+    );
+    const result = fixedFactory.build(); // Works
+}
+```
+
+### Hook Error Handling
+
+```typescript
+const factory = new Factory<User>((f) => ({
+    /* schema */
+}))
+    .beforeBuild((params) => {
+        if (!params.email) {
+            throw new Error('Email is required');
+        }
+        return params;
+    })
+    .afterBuild((user) => {
+        // Validate business rules
+        if (user.age < 0) {
+            throw new Error('Invalid age');
+        }
+        return user;
+    });
+
+try {
+    const user = factory.build({ age: -5 });
+} catch (error) {
+    console.log('Hook validation failed:', error.message);
+    // Handle or retry with valid data
+    const validUser = factory.build({ age: 25, email: 'test@example.com' });
+}
+```
+
+### Async Error Handling
+
+```typescript
+const asyncFactory = new Factory<User>((f) => ({
+    /* schema */
+})).afterBuild(async (user) => {
+    try {
+        // Simulate external API call
+        const enrichedData = await fetchUserData(user.id);
+        return { ...user, ...enrichedData };
+    } catch (apiError) {
+        // Graceful fallback
+        console.warn('API enrichment failed, using defaults');
+        return { ...user, enrichmentFailed: true };
+    }
+});
+
+try {
+    const user = await asyncFactory.buildAsync();
+} catch (error) {
+    console.log('Factory error:', error.message);
+}
+```
+
+## Common Patterns
+
+### Test Data Factories
+
+```typescript
+// Base factory with common fields
+const BaseEntityFactory = new Factory<BaseEntity>((f) => ({
+    id: f.string.uuid(),
+    createdAt: f.date.past(),
+    updatedAt: f.date.recent(),
+}));
+
+// Extend for specific entities
+const UserFactory = BaseEntityFactory.extend<User>((f) => ({
+    email: f.internet.email(),
+    name: f.person.fullName(),
+}));
+```
+
+### Stateful Factories
+
+```typescript
+let userCounter = 0;
+const SequentialUserFactory = new Factory<User>((f) => ({
+    id: ++userCounter,
+    email: `user${userCounter}@example.com`,
+    // ... other fields
+}));
+```
+
+### Conditional Generation
+
+```typescript
+const UserFactory = new Factory<User>((f) => {
+    const isPremium = f.datatype.boolean();
+    return {
+        subscription: isPremium ? 'premium' : 'free',
+        features: isPremium
+            ? ['feature1', 'feature2', 'feature3']
+            : ['feature1'],
+        // ... other fields
+    };
+});
+```
 
 ## Contributing
 

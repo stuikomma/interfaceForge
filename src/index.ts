@@ -9,8 +9,9 @@ import {
 } from '@tool-belt/type-predicates';
 import { ConfigurationError } from './errors';
 import { CycleGenerator, SampleGenerator } from './generators';
-import { merge, Ref } from './utils';
 import { PersistenceAdapter } from './persistence-adapter';
+import { merge, Ref, validateBatchSize } from './utils';
+import { DEFAULT_MAX_DEPTH } from './constants';
 
 export * from '../examples/adapters/mongoose-adapter';
 export * from '../examples/adapters/prisma-adapter';
@@ -30,7 +31,15 @@ export type FactoryComposition<T> = {
 export type FactoryFunction<T> = (
     factory: Factory<T>,
     iteration: number,
-) => FactorySchema<T>;
+) => FactorySchema<T> | Promise<FactorySchema<T>>;
+
+export interface FactoryOptions {
+    locale?: LocaleDefinition | LocaleDefinition[];
+
+    maxDepth?: number;
+
+    randomizer?: Randomizer;
+}
 
 export type FactorySchema<T> = {
     [K in keyof T]:
@@ -109,41 +118,35 @@ class TypeORMAdapter<T> implements PersistenceAdapter<T> {
  *
  * @template T - The type of objects this factory generates
  */
-export class Factory<T> extends Faker {
-    private afterBuildHooks: AfterBuildHook<T>[] = [];
-    private beforeBuildHooks: BeforeBuildHook<T>[] = [];
-    private readonly factory: FactoryFunction<T>;
+
+export class Factory<
+    T,
+    O extends FactoryOptions = FactoryOptions,
+> extends Faker {
+    readonly options?: { maxDepth: number } & Omit<
+        O,
+        'locale' | 'maxDepth' | 'randomizer'
+    >;
+    protected afterBuildHooks: AfterBuildHook<T>[] = [];
+    protected beforeBuildHooks: BeforeBuildHook<T>[] = [];
+    protected readonly factory: FactoryFunction<T>;
     private readonly maxDepth: number;
     private persistenceAdapter?: PersistenceAdapter<T>;
 
+
     constructor(
         factory: FactoryFunction<T>,
-        options?: {
-            /**
-             * The locale data to use for this instance.
-             * If an array is provided, the first locale that has a definition for a given property will be used.
-             */
-            locale?: LocaleDefinition | LocaleDefinition[];
-            /**
-             * Maximum recursion depth for nested factory references.
-             * Default is 10. Set to 0 to disable nested generation.
-             */
-            maxDepth?: number;
-            /**
-             * The Randomizer to use.
-             * Specify this only if you want to use it to achieve a specific goal,
-             * such as sharing the same random generator with other instances/tools.
-             */
-            randomizer?: Randomizer;
-        },
+        { locale = en, randomizer, ...rest }: Partial<O> = {},
     ) {
         super({
-            locale: options?.locale ?? en,
-            randomizer: options?.randomizer,
+            locale,
+            randomizer,
         });
 
         this.factory = factory;
-        this.maxDepth = options?.maxDepth ?? 10;
+        this.options = { ...rest, maxDepth: rest.maxDepth ?? 10 } as {
+            maxDepth: number;
+        } & Omit<O, 'locale' | 'maxDepth' | 'randomizer'>;
     }
 
     /**
@@ -172,6 +175,12 @@ export class Factory<T> extends Faker {
      * @throws {Error} If size is negative or not an integer
      */
     batch = (size: number, kwargs?: Partial<T> | Partial<T>[]): T[] => {
+        if (isAsyncFunction(this.factory)) {
+            throw new ConfigurationError(
+                'Async factory function detected. Use buildAsync() method to build instances with async factories.',
+            );
+        }
+
         if (!Number.isInteger(size) || size < 0) {
             throw new Error('Batch size must be a non-negative integer');
         }
@@ -180,19 +189,30 @@ export class Factory<T> extends Faker {
             return [];
         }
 
+        let results: T[];
         if (kwargs) {
             const generator = this.iterate<Partial<T>>(
                 Array.isArray(kwargs) ? kwargs : ([kwargs] as Partial<T>[]),
             );
 
-            return new Array(size)
+            results = new Array(size)
                 .fill(null)
-                .map((_, i) => this.#generate(i, generator.next().value, 0));
+                .map((_, i) =>
+                    this.#generate(i, generator.next().value, 0),
+                ) as T[];
+        } else {
+            results = new Array(size)
+                .fill(null)
+                .map((_, i) => this.#generate(i, undefined, 0)) as T[];
         }
 
-        return new Array(size)
-            .fill(null)
-            .map((_, i) => this.#generate(i, undefined, 0));
+        if (results.some((result) => result instanceof Promise)) {
+            throw new ConfigurationError(
+                'Async factory function detected. Use buildAsync() method to build instances with async factories.',
+            );
+        }
+
+        return results;
     };
 
     /**
@@ -220,8 +240,49 @@ export class Factory<T> extends Faker {
      * @param kwargs Properties to override in the generated instance
      * @returns A new instance with factory-generated values merged with any overrides
      * @throws {ConfigurationError} If async hooks are registered
+
+     */
+
+     *
+     * @example
+     * const UserFactory = new Factory<User>((factory) => ({
+     *     id: factory.string.uuid(),
+     *     name: factory.person.fullName(),
+     *     email: factory.internet.email(),
+     * }));
+     *
+     * // Build with defaults
+     * const user = UserFactory.build();
+     *
+     * // Build with overrides
+     * const adminUser = UserFactory.build({
+     *     email: 'admin@example.com'
+     * });
+     *
+     * // With synchronous hooks
+     * const FactoryWithHooks = new Factory<User>((factory) => ({
+     *     id: factory.string.uuid(),
+     *     name: factory.person.fullName(),
+     *     email: ''
+     * }))
+     * .beforeBuild((params) => {
+     *     params.email = params.email ?? 'default@example.com';
+     *     return params;
+     * })
+     * .afterBuild((user) => {
+     *     user.email = user.email.toLowerCase();
+     *     return user;
+     * });
+     *
+     * const userWithHooks = FactoryWithHooks.build(); // Hooks are applied automatically
      */
     build = (kwargs?: Partial<T>): T => {
+        if (isAsyncFunction(this.factory)) {
+            throw new ConfigurationError(
+                'Async factory function detected. Use buildAsync() method to build instances with async factories.',
+            );
+        }
+
         const hasAsyncHooks =
             this.beforeBuildHooks.some((hook) => isAsyncFunction(hook)) ||
             this.afterBuildHooks.some((hook) => isAsyncFunction(hook));
@@ -239,6 +300,12 @@ export class Factory<T> extends Faker {
         }
 
         let result = this.#generate(0, params, 0);
+
+        if (result instanceof Promise) {
+            throw new ConfigurationError(
+                'Async factory function detected. Use buildAsync() method to build instances with async factories.',
+            );
+        }
 
         for (const hook of this.afterBuildHooks) {
             result = hook(result) as T;
@@ -263,7 +330,7 @@ export class Factory<T> extends Faker {
             params = await hook(params);
         }
 
-        let result = this.#generate(0, params, 0);
+        let result = await this.#generateAsync(0, params, 0);
 
         for (const hook of this.afterBuildHooks) {
             result = await hook(result);
@@ -300,7 +367,7 @@ export class Factory<T> extends Faker {
                 );
                 return { ...baseValues, ...composedValues } as FactorySchema<U>;
             },
-            { maxDepth: this.maxDepth },
+            { maxDepth: this.options?.maxDepth ?? DEFAULT_MAX_DEPTH },
         );
     }
 
@@ -362,9 +429,20 @@ export class Factory<T> extends Faker {
                     iteration,
                 ) as FactorySchema<U>;
                 const extendedValues = factoryFn(factory, iteration);
+                if (
+                    extendedValues instanceof Promise ||
+                    baseValues instanceof Promise
+                ) {
+                    return Promise.resolve(baseValues).then((base) =>
+                        Promise.resolve(extendedValues).then((extended) => ({
+                            ...base,
+                            ...extended,
+                        })),
+                    ) as Promise<FactorySchema<U>>;
+                }
                 return { ...baseValues, ...extendedValues };
             },
-            { maxDepth: this.maxDepth },
+            { maxDepth: this.options?.maxDepth ?? DEFAULT_MAX_DEPTH },
         );
     }
 
@@ -423,7 +501,7 @@ export class Factory<T> extends Faker {
 
     /**
      * Creates a generator that yields random values from an iterable without consecutive duplicates.
-     * Each value is randomly selected with replacement, but the generator ensures the same value
+     * Each value is randomly selected with a replacement, but the generator ensures the same value
      * is never returned twice in a row (unless the iterable contains only one element).
      *
      * @template T The type of elements in the iterable
@@ -458,56 +536,111 @@ export class Factory<T> extends Faker {
         const depthLimitedFactory = new Proxy(this, {
             get(target, prop) {
                 if (prop === 'build') {
-                    return (buildKwargs?: Partial<T>) =>
-                        target.#generate(0, buildKwargs, depth + 1);
+                    return isAsync
+                        ? async (buildKwargs?: Partial<T>) =>
+                              target.#generateAsync(0, buildKwargs, depth + 1)
+                        : (buildKwargs?: Partial<T>) =>
+                              target.#generate(0, buildKwargs, depth + 1);
                 }
                 if (prop === 'batch') {
-                    return (
-                        size: number,
-                        batchKwargs?: Partial<T> | Partial<T>[],
-                    ) => {
-                        if (depth + 1 >= target.maxDepth) {
-                            return null;
-                        }
-                        if (!Number.isInteger(size) || size < 0) {
-                            throw new Error(
-                                'Batch size must be a non-negative integer',
-                            );
-                        }
-                        if (size === 0) {
-                            return [];
-                        }
-                        if (batchKwargs) {
-                            const generator = target.iterate<Partial<T>>(
-                                Array.isArray(batchKwargs)
-                                    ? batchKwargs
-                                    : ([batchKwargs] as Partial<T>[]),
-                            );
-                            return new Array(size)
-                                .fill(null)
-                                .map((_, i) =>
-                                    target.#generate(
-                                        i,
-                                        generator.next().value,
-                                        depth + 1,
-                                    ),
-                                );
-                        }
-                        return new Array(size)
-                            .fill(null)
-                            .map((_, i) =>
-                                target.#generate(i, undefined, depth + 1),
-                            );
-                    };
+                    return isAsync
+                        ? async (
+                              size: number,
+                              batchKwargs?: Partial<T> | Partial<T>[],
+                          ) =>
+                              this.#batchAsync(target, size, batchKwargs, depth)
+                        : (
+                              size: number,
+                              batchKwargs?: Partial<T> | Partial<T>[],
+                          ) => this.#batch(target, size, batchKwargs, depth);
                 }
                 return Reflect.get(target, prop);
             },
-        });
+        }) as Factory<T>;
+    }
 
-        const defaults = this.factory(
-            depthLimitedFactory as Factory<T>,
-            iteration,
-        );
+    /**
+     * @internal
+     * @param depth - Current depth in recursive generation
+     * @returns True if depth exceeds maximum allowed depth
+     */
+    protected isDepthExceeded(depth: number): boolean {
+        return depth >= (this.options?.maxDepth ?? DEFAULT_MAX_DEPTH);
+    }
+
+    #batch(
+        target: Factory<T>,
+        size: number,
+        batchKwargs: Partial<T> | Partial<T>[] | undefined,
+        depth: number,
+    ): T[] {
+        if (this.isDepthExceeded(depth + 1)) {
+            return null as unknown as T[];
+        }
+        validateBatchSize(size);
+        if (size === 0) {
+            return [];
+        }
+        if (batchKwargs) {
+            const generator = target.iterate<Partial<T>>(
+                Array.isArray(batchKwargs)
+                    ? batchKwargs
+                    : ([batchKwargs] as Partial<T>[]),
+            );
+            return new Array(size)
+                .fill(null)
+                .map((_, i) =>
+                    target.#generate(i, generator.next().value, depth + 1),
+                ) as T[];
+        }
+        return new Array(size)
+            .fill(null)
+            .map((_, i) => target.#generate(i, undefined, depth + 1)) as T[];
+    }
+
+    async #batchAsync(
+        target: Factory<T>,
+        size: number,
+        batchKwargs: Partial<T> | Partial<T>[] | undefined,
+        depth: number,
+    ): Promise<T[]> {
+        if (this.isDepthExceeded(depth + 1)) {
+            return null as unknown as T[];
+        }
+        validateBatchSize(size);
+        if (size === 0) {
+            return [];
+        }
+        if (batchKwargs) {
+            const generator = target.iterate<Partial<T>>(
+                Array.isArray(batchKwargs)
+                    ? batchKwargs
+                    : ([batchKwargs] as Partial<T>[]),
+            );
+            const promises = new Array(size)
+                .fill(null)
+                .map((_, i) =>
+                    target.#generateAsync(i, generator.next().value, depth + 1),
+                );
+            return Promise.all(promises);
+        }
+        const promises = new Array(size)
+            .fill(null)
+            .map((_, i) => target.#generateAsync(i, undefined, depth + 1));
+        return Promise.all(promises);
+    }
+
+    #generate(
+        iteration: number,
+        kwargs?: Partial<T>,
+        depth = 0,
+    ): Promise<T> | T {
+        if (this.isDepthExceeded(depth)) {
+            return null as T;
+        }
+
+        const depthLimitedFactory = this.createDepthLimitedProxy(depth, false);
+        const defaults = this.factory(depthLimitedFactory, iteration);
 
         if (kwargs) {
             return merge(
@@ -517,6 +650,28 @@ export class Factory<T> extends Faker {
         }
 
         return this.#parseValue(defaults) as T;
+    }
+
+    async #generateAsync(
+        iteration: number,
+        kwargs?: Partial<T>,
+        depth = 0,
+    ): Promise<T> {
+        if (this.isDepthExceeded(depth)) {
+            return null as T;
+        }
+
+        const depthLimitedFactory = this.createDepthLimitedProxy(depth, true);
+        const defaults = await this.factory(depthLimitedFactory, iteration);
+
+        if (kwargs) {
+            return merge(
+                await this.#parseValueAsync(defaults),
+                await this.#parseValueAsync(kwargs),
+            ) as T;
+        }
+
+        return (await this.#parseValueAsync(defaults)) as T;
     }
 
     #parseValue(value: unknown): unknown {
@@ -529,12 +684,50 @@ export class Factory<T> extends Faker {
         }
 
         if (isRecord(value)) {
-            const result: Record<string, unknown> = {};
+            const result: Record<string | symbol, unknown> = {};
+
             for (const [key, val] of Object.entries(
                 value as Record<string, unknown>,
             )) {
                 result[key] = this.#parseValue(val);
             }
+
+            for (const sym of Object.getOwnPropertySymbols(value)) {
+                result[sym] = this.#parseValue(
+                    (value as Record<symbol, unknown>)[sym],
+                );
+            }
+
+            return result;
+        }
+
+        return value;
+    }
+
+    async #parseValueAsync(value: unknown): Promise<unknown> {
+        if (value instanceof Ref) {
+            return value.callHandler();
+        }
+
+        if (isIterator(value)) {
+            return (value as Iterator<unknown>).next().value;
+        }
+
+        if (isRecord(value)) {
+            const result: Record<string | symbol, unknown> = {};
+
+            for (const [key, val] of Object.entries(
+                value as Record<string, unknown>,
+            )) {
+                result[key] = await this.#parseValueAsync(val);
+            }
+
+            for (const sym of Object.getOwnPropertySymbols(value)) {
+                result[sym] = await this.#parseValueAsync(
+                    (value as Record<symbol, unknown>)[sym],
+                );
+            }
+
             return result;
         }
 

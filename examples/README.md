@@ -65,6 +65,32 @@ Learn how to use hooks for data transformation and validation:
 - Conditional logic in hooks
 - Error handling and business rules
 
+### 07. Zod Integration
+
+Integrate Interface-Forge with Zod schemas across three examples:
+
+#### [Basic Zod Integration](./07-zod-basic.ts)
+
+- Creating factories from Zod schemas
+- Simple schema examples
+- Batch generation with overrides
+- API response mocking
+
+#### [Advanced Zod Patterns](./07-zod-integration.ts)
+
+- Complex nested schemas
+- Custom generators for specific fields
+- Discriminated unions and recursive schemas
+- Hooks and transformations
+- Working with Maps, Sets, and Records
+
+#### [Zod for Testing](./07-zod-testing.ts)
+
+- Generating test data from domain schemas
+- Creating test scenarios
+- Mock API responses
+- Integration with test frameworks
+
 ## Running the Examples
 
 To run any example:
@@ -73,12 +99,23 @@ To run any example:
 # Install dependencies
 npm install interface-forge
 
+# For Zod examples, also install Zod
+npm install zod
+
 # Run with TypeScript
 npx tsx examples/01-basic-usage.ts
 
 # Or compile and run
 npx tsc examples/01-basic-usage.ts --outDir dist
 node dist/01-basic-usage.js
+```
+
+### Zod Integration Setup
+
+For Zod examples, import from the separate entry point:
+
+```typescript
+import { ZodFactory } from 'interface-forge/zod';
 ```
 
 ## Key Concepts
