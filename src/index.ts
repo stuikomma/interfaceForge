@@ -11,12 +11,27 @@ import { ConfigurationError } from './errors';
 import { CycleGenerator, SampleGenerator } from './generators';
 import { merge, Ref, validateBatchSize } from './utils';
 import { DEFAULT_MAX_DEPTH } from './constants';
+import {
+    AfterBuildHook,
+    BeforeBuildHook,
+    CreateManyOptions,
+    CreateOptions,
+    PersistenceAdapter,
+} from './types';
 
 export {
     CircularReferenceError,
     ConfigurationError,
     ValidationError,
 } from './errors';
+export {
+    AfterBuildHook,
+    BeforeBuildHook,
+    CreateManyOptions,
+    CreateOptions,
+    PartialFactoryFunction,
+    PersistenceAdapter,
+} from './types';
 export { Ref } from './utils';
 
 export type FactoryComposition<T> = {
@@ -30,9 +45,7 @@ export type FactoryFunction<T> = (
 
 export interface FactoryOptions {
     locale?: LocaleDefinition | LocaleDefinition[];
-
     maxDepth?: number;
-
     randomizer?: Randomizer;
 }
 
@@ -43,17 +56,13 @@ export type FactorySchema<T> = {
         | T[K];
 };
 
-type AfterBuildHook<T> = (obj: T) => Promise<T> | T;
-
-type BeforeBuildHook<T> = (
-    params: Partial<T>,
-) => Partial<T> | Promise<Partial<T>>;
 /**
  * A factory class for generating type-safe mock data by extending Faker.js functionality.
  * Provides methods for creating single instances, batches, and complex object compositions
- * with support for circular references through depth control.
+ * with support for circular references through depth control and persistence.
  *
  * @template T - The type of objects this factory generates
+ * @template O - The type of factory options
  */
 export class Factory<
     T,
@@ -66,6 +75,7 @@ export class Factory<
     protected afterBuildHooks: AfterBuildHook<T>[] = [];
     protected beforeBuildHooks: BeforeBuildHook<T>[] = [];
     protected readonly factory: FactoryFunction<T>;
+    private defaultAdapter?: PersistenceAdapter<T>;
 
     constructor(
         factory: FactoryFunction<T>,
@@ -77,7 +87,10 @@ export class Factory<
         });
 
         this.factory = factory;
-        this.options = { ...rest, maxDepth: rest.maxDepth ?? 10 } as {
+        this.options = {
+            ...rest,
+            maxDepth: rest.maxDepth ?? DEFAULT_MAX_DEPTH,
+        } as {
             maxDepth: number;
         } & Omit<O, 'locale' | 'maxDepth' | 'randomizer'>;
     }
@@ -89,24 +102,6 @@ export class Factory<
      *
      * @param hook Function that receives the built instance and returns the modified instance
      * @returns The current Factory instance for method chaining
-     *
-     * @example
-     * const UserFactory = new Factory<User>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     name: factory.person.fullName(),
-     *     email: ''
-     * }))
-     * .afterBuild((user) => {
-     *     user.email = `${user.name.toLowerCase().replace(/\s+/g, '.')}@example.com`;
-     *     return user;
-     * })
-     * .afterBuild(async (user) => {
-     *     // Simulate API call to validate user
-     *     await validateUser(user);
-     *     return user;
-     * });
-     *
-     * const user = await UserFactory.buildAsync();
      */
     afterBuild(hook: AfterBuildHook<T>): this {
         if (!isFunction(hook) && !isAsyncFunction(hook)) {
@@ -124,25 +119,6 @@ export class Factory<
      * @param kwargs Either a single partial object (applied to all) or an array of partials (one per instance)
      * @returns Array of generated instances
      * @throws {Error} If size is negative or not an integer
-     *
-     * @example
-     * const ProductFactory = new Factory<Product>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     name: factory.commerce.productName(),
-     *     price: factory.number.float({ min: 10, max: 100 }),
-     * }));
-     *
-     * // Create 5 products
-     * const products = ProductFactory.batch(5);
-     *
-     * // Create 3 products with the same category
-     * const electronics = ProductFactory.batch(3, { category: 'Electronics' });
-     *
-     * // Create products with individual overrides
-     * const customProducts = ProductFactory.batch(2, [
-     *     { name: 'Special Product 1', price: 99.99 },
-     *     { name: 'Special Product 2', price: 149.99 }
-     * ]);
      */
     batch = (size: number, kwargs?: Partial<T> | Partial<T>[]): T[] => {
         if (isAsyncFunction(this.factory)) {
@@ -184,6 +160,34 @@ export class Factory<
 
         return results;
     };
+
+    /**
+     * Creates multiple instances asynchronously, allowing use of async factory functions.
+     * This method supports both synchronous and asynchronous factory functions and hooks.
+     *
+     * @param size Number of instances to generate (must be non-negative integer)
+     * @param kwargs Either a single partial object (applied to all) or an array of partials (one per instance)
+     * @returns Promise that resolves to an array of generated instances
+     * @throws {Error} If size is negative or not an integer
+     *
+     * @example
+     * ```typescript
+     * const UserFactory = new Factory<User>(async (factory) => ({
+     *   id: factory.string.uuid(),
+     *   email: factory.internet.email(),
+     *   apiKey: await generateApiKey() // async operation
+     * }));
+     *
+     * const users = await UserFactory.batchAsync(5);
+     * ```
+     */
+    async batchAsync(
+        size: number,
+        kwargs?: Partial<T> | Partial<T>[],
+    ): Promise<T[]> {
+        return this.#batchAsync(this, size, kwargs, 0);
+    }
+
     /**
      * Adds a hook that will be executed before building the instance.
      * Hooks receive the partial parameters (kwargs) and can modify them before the instance is built.
@@ -191,28 +195,6 @@ export class Factory<
      *
      * @param hook Function that receives partial parameters and returns modified parameters
      * @returns The current Factory instance for method chaining
-     *
-     * @example
-     * const UserFactory = new Factory<User>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     name: factory.person.fullName(),
-     *     role: 'user',
-     *     createdAt: factory.date.recent()
-     * }))
-     * .beforeBuild((params) => {
-     *     // Ensure admin users have specific properties
-     *     if (params.role === 'admin') {
-     *         return {
-     *             ...params,
-     *             permissions: ['read', 'write', 'delete'],
-     *             isVerified: true
-     *         };
-     *     }
-     *     return params;
-     * });
-     *
-     * const admin = await UserFactory.buildAsync({ role: 'admin' });
-     * // admin will have permissions and isVerified set automatically
      */
     beforeBuild(hook: BeforeBuildHook<T>): this {
         if (!isFunction(hook) && !isAsyncFunction(hook)) {
@@ -231,38 +213,6 @@ export class Factory<
      * @param kwargs Properties to override in the generated instance
      * @returns A new instance with factory-generated values merged with any overrides
      * @throws {ConfigurationError} If async hooks are registered
-     *
-     * @example
-     * const UserFactory = new Factory<User>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     name: factory.person.fullName(),
-     *     email: factory.internet.email(),
-     * }));
-     *
-     * // Build with defaults
-     * const user = UserFactory.build();
-     *
-     * // Build with overrides
-     * const adminUser = UserFactory.build({
-     *     email: 'admin@example.com'
-     * });
-     *
-     * // With synchronous hooks
-     * const FactoryWithHooks = new Factory<User>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     name: factory.person.fullName(),
-     *     email: ''
-     * }))
-     * .beforeBuild((params) => {
-     *     params.email = params.email ?? 'default@example.com';
-     *     return params;
-     * })
-     * .afterBuild((user) => {
-     *     user.email = user.email.toLowerCase();
-     *     return user;
-     * });
-     *
-     * const userWithHooks = FactoryWithHooks.build(); // Hooks are applied automatically
      */
     build = (kwargs?: Partial<T>): T => {
         if (isAsyncFunction(this.factory)) {
@@ -310,49 +260,6 @@ export class Factory<
      * @param kwargs Optional properties to override in the generated instance
      * @returns A promise that resolves to the built and processed instance
      * @throws {Error} If any hook throws an error during execution
-     *
-     * @example
-     * // With async hooks
-     * const UserFactory = new Factory<User>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     name: factory.person.fullName(),
-     *     email: '',
-     *     status: 'pending'
-     * }))
-     * .beforeBuild((params) => {
-     *     // Synchronous hook
-     *     if (!params.email) {
-     *         const name = params.name || 'user';
-     *         params.email = `${name.toLowerCase().replace(/\s+/g, '.')}@example.com`;
-     *     }
-     *     return params;
-     * })
-     * .afterBuild(async (user) => {
-     *     // Asynchronous hook
-     *     if (user.status === 'pending') {
-     *         await activateUser(user);
-     *         user.status = 'active';
-     *     }
-     *     return user;
-     * });
-     *
-     * // Build with async hooks
-     * const user = await UserFactory.buildAsync();
-     *
-     * // Build with custom email - beforeBuild hook won't override it
-     * const customUser = await UserFactory.buildAsync({ email: 'custom@example.com' });
-     *
-     * // Can also be used with sync-only hooks for consistency
-     * const syncFactory = new Factory<Product>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     name: factory.commerce.productName()
-     * }))
-     * .afterBuild((product) => {
-     *     product.name = product.name.toUpperCase();
-     *     return product;
-     * });
-     *
-     * const product = await syncFactory.buildAsync(); // Works with sync hooks too
      */
     async buildAsync(kwargs?: Partial<T>): Promise<T> {
         let params = kwargs ?? {};
@@ -377,21 +284,6 @@ export class Factory<
      * @template U The composed type (must extend the base type T)
      * @param composition Object mapping property names to values or factories
      * @returns A new factory that generates objects with combined properties
-     *
-     * @example
-     * const UserFactory = new Factory<User>((factory) => ({
-     *     name: factory.person.fullName(),
-     *     email: factory.internet.email(),
-     * }));
-     *
-     * const PostFactory = new Factory<Post>((factory) => ({
-     *     title: factory.lorem.sentence(),
-     *     content: factory.lorem.paragraph(),
-     * }));
-     *
-     * const UserWithPostsFactory = UserFactory.compose({
-     *     posts: PostFactory.batch(3),
-     * });
      */
     compose<U extends T>(composition: FactoryComposition<U>): Factory<U> {
         return new Factory<U>(
@@ -418,23 +310,98 @@ export class Factory<
     }
 
     /**
+     * Creates and persists a single instance using the factory's schema.
+     * Uses the configured persistence adapter if available.
+     *
+     * @param kwargs Optional properties to override in the generated instance
+     * @param options Options including an optional persistence adapter
+     * @returns Promise that resolves with the persisted instance
+     * @throws {ConfigurationError} If no persistence adapter is configured
+     *
+     * @example
+     * ```typescript
+     * // With default adapter
+     * const userFactory = new Factory<User>((faker) => ({
+     *   email: faker.internet.email(),
+     *   name: faker.person.fullName()
+     * })).withAdapter(mongooseAdapter);
+     *
+     * const user = await userFactory.create({ name: 'John' });
+     *
+     * // With adapter in options
+     * const user2 = await userFactory.create(
+     *   { name: 'Jane' },
+     *   { adapter: prismaAdapter }
+     * );
+     * ```
+     */
+    async create(kwargs?: Partial<T>, options?: CreateOptions<T>): Promise<T> {
+        const adapter = options?.adapter ?? this.defaultAdapter;
+        if (!adapter) {
+            throw new ConfigurationError(
+                'No persistence adapter configured. Provide an adapter in options or set a default adapter.',
+            );
+        }
+
+        const instance = await this.buildAsync(kwargs);
+        return adapter.create(instance);
+    }
+
+    /**
+     * Creates and persists multiple instances in a batch operation.
+     * Uses the configured persistence adapter if available.
+     *
+     * @param size Number of instances to create and persist
+     * @param kwargs Optional overrides for the instances
+     * @param options Options including an optional persistence adapter
+     * @returns Promise that resolves with the persisted instances
+     * @throws {ConfigurationError} If no persistence adapter is configured
+     *
+     * @example
+     * ```typescript
+     * // Create 5 users with default adapter
+     * const users = await userFactory.createMany(5);
+     *
+     * // With individual overrides
+     * const users2 = await userFactory.createMany(3, [
+     *   { role: 'admin' },
+     *   { role: 'user' },
+     *   { role: 'guest' }
+     * ]);
+     *
+     * // With adapter in options
+     * const users3 = await userFactory.createMany(
+     *   10,
+     *   undefined,
+     *   { adapter: typeormAdapter }
+     * );
+     * ```
+     */
+    async createMany(
+        size: number,
+        kwargs?: Partial<T> | Partial<T>[],
+        options?: CreateManyOptions<T>,
+    ): Promise<T[]> {
+        const adapter = options?.adapter ?? this.defaultAdapter;
+        if (!adapter) {
+            throw new ConfigurationError(
+                'No persistence adapter configured. Provide an adapter in options or set a default adapter.',
+            );
+        }
+
+        const instances = await (isAsyncFunction(this.factory)
+            ? this.#batchAsync(this, size, kwargs, 0)
+            : this.#batch(this, size, kwargs, 0));
+        return adapter.createMany(instances);
+    }
+
+    /**
      * Creates a new factory that inherits from this factory's schema with modifications.
      * Unlike compose(), extend() provides access to the factory instance for dynamic property generation.
      *
      * @template U The extended type (must extend the base type T)
      * @param factoryFn Function that returns properties to merge with the base schema
      * @returns A new factory with inherited and extended properties
-     *
-     * @example
-     * const BaseUserFactory = new Factory<BaseUser>((factory) => ({
-     *     id: factory.datatype.uuid(),
-     *     createdAt: factory.date.recent(),
-     * }));
-     *
-     * const AdminUserFactory = BaseUserFactory.extend<AdminUser>((factory) => ({
-     *     role: 'admin',
-     *     permissions: ['read', 'write', 'delete'],
-     * }));
      */
     extend<U extends T>(factoryFn: FactoryFunction<U>): Factory<U> {
         return new Factory<U>(
@@ -470,17 +437,6 @@ export class Factory<
      * @param iterable An iterable containing values to cycle through (must not be empty)
      * @returns A generator that yields values in order, restarting after the last element
      * @throws {Error} If the iterable is empty
-     *
-     * @example
-     * const UserFactory = new Factory<User>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     name: factory.person.fullName(),
-     *     role: factory.iterate(['admin', 'user', 'moderator']),
-     *     status: factory.iterate(['active', 'inactive']),
-     * }));
-     *
-     * // Creates users with roles cycling through: admin, user, moderator, admin, user...
-     * const users = UserFactory.batch(5);
      */
     iterate<T>(iterable: Iterable<T>): Generator<T, T, T> {
         const generator = new CycleGenerator(iterable);
@@ -489,24 +445,13 @@ export class Factory<
 
     /**
      * Creates a generator that yields random values from an iterable without consecutive duplicates.
-     * Each value is randomly selected with a replacement, but the generator ensures the same value
+     * Each value is randomly selected with replacement, but the generator ensures the same value
      * is never returned twice in a row (unless the iterable contains only one element).
      *
      * @template T The type of elements in the iterable
      * @param iterable An iterable containing values to sample from (must not be empty)
      * @returns A generator that yields random values without consecutive repetition
      * @throws {Error} If the iterable is empty
-     *
-     * @example
-     * const ProductFactory = new Factory<Product>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     name: factory.commerce.productName(),
-     *     category: factory.sample(['Electronics', 'Books', 'Clothing', 'Food']),
-     *     color: factory.sample(['Red', 'Blue', 'Green', 'Yellow', 'Black', 'White']),
-     * }));
-     *
-     * // Creates products with random categories and colors (no consecutive duplicates)
-     * const products = ProductFactory.batch(10);
      */
     sample<T>(iterable: Iterable<T>): Generator<T, T, T> {
         const generator = new SampleGenerator(iterable);
@@ -522,26 +467,40 @@ export class Factory<
      * @param handler The function to call during object generation
      * @param args Arguments to pass to the function when called
      * @returns A reference that will execute the function during build
-     *
-     * @example
-     * const PostFactory = new Factory<Post>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     title: factory.lorem.sentence(),
-     *     content: factory.lorem.paragraphs(3),
-     * }));
-     *
-     * const UserFactory = new Factory<User>((factory) => ({
-     *     id: factory.string.uuid(),
-     *     name: factory.person.fullName(),
-     *     posts: factory.use(PostFactory.batch, 3),
-     *     favoritePost: factory.use(PostFactory.build),
-     * }));
-     *
-     * // Creates a user with 3 posts and a favorite post
-     * const user = UserFactory.build();
      */
     use<R, A extends unknown[]>(handler: (...args: A) => R, ...args: A): R {
         return new Ref({ args, handler }) as R;
+    }
+
+    /**
+     * Sets the default persistence adapter for this factory instance.
+     *
+     * @param adapter The persistence adapter to use as default
+     * @returns The current Factory instance for method chaining
+     *
+     * @example
+     * ```typescript
+     * import { MongooseAdapter } from './adapters/mongoose-adapter';
+     *
+     * const userFactory = new Factory<User>((faker) => ({
+     *   id: faker.string.uuid(),
+     *   email: faker.internet.email(),
+     *   name: faker.person.fullName()
+     * }));
+     *
+     * // Set default adapter
+     * const factoryWithDb = userFactory.withAdapter(
+     *   new MongooseAdapter(UserModel)
+     * );
+     *
+     * // Now all create/createMany calls will use this adapter
+     * const user = await factoryWithDb.create();
+     * const users = await factoryWithDb.createMany(5);
+     * ```
+     */
+    withAdapter(adapter: PersistenceAdapter<T>): this {
+        this.defaultAdapter = adapter;
+        return this;
     }
 
     /**

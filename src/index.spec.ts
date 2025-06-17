@@ -1,4 +1,8 @@
-import { Factory } from './index.js';
+import { Factory, PersistenceAdapter } from './index.js';
+import { MongooseAdapter } from '../examples/adapters/mongoose-adapter.js';
+import { PrismaAdapter } from '../examples/adapters/prisma-adapter.js';
+import { TypeORMAdapter } from '../examples/adapters/typeorm-adapter.js';
+import { describe, expect, it, vi } from 'vitest';
 
 interface TestObject {
     age?: number;
@@ -173,6 +177,70 @@ describe('Factory class functionality', () => {
             expect(() => factory.batch(3.14)).toThrow(
                 'Batch size must be a non-negative integer',
             );
+        });
+    });
+
+    describe('batchAsync method', () => {
+        it('creates a batch of objects with async factory', async () => {
+            const factory = new Factory<TestObject>(async (faker) => ({
+                age: await Promise.resolve(
+                    faker.number.int({ max: 65, min: 18 }),
+                ),
+                name: faker.person.firstName(),
+            }));
+
+            const results = await factory.batchAsync(3);
+            expect(results).toHaveLength(3);
+            results.forEach((result) => {
+                expect(result).toEqual(
+                    expect.objectContaining({
+                        age: expect.any(Number),
+                        name: expect.any(String),
+                    }),
+                );
+            });
+        });
+
+        it('applies overrides to async batch', async () => {
+            const factory = new Factory<TestObject>(async (faker) => ({
+                age: await Promise.resolve(25),
+                name: faker.person.firstName(),
+            }));
+
+            const results = await factory.batchAsync(2, { name: 'Override' });
+            expect(results).toHaveLength(2);
+            results.forEach((result) => {
+                expect(result.name).toBe('Override');
+                expect(result.age).toBe(25);
+            });
+        });
+
+        it('applies individual overrides to async batch', async () => {
+            const factory = new Factory<TestObject>(async (faker) => ({
+                age: await Promise.resolve(25),
+                name: faker.person.firstName(),
+            }));
+
+            const overrides = [{ name: 'First' }, { name: 'Second' }];
+            const results = await factory.batchAsync(2, overrides);
+            expect(results[0].name).toBe('First');
+            expect(results[1].name).toBe('Second');
+        });
+
+        it('throws error for invalid batch size in async', async () => {
+            const factory = new Factory<TestObject>(async () => defaultObject);
+            await expect(factory.batchAsync(-1)).rejects.toThrow(
+                'Batch size must be a non-negative integer',
+            );
+            await expect(factory.batchAsync(1.5)).rejects.toThrow(
+                'Batch size must be a non-negative integer',
+            );
+        });
+
+        it('returns empty array when size is 0 in async', async () => {
+            const factory = new Factory<TestObject>(async () => defaultObject);
+            const results = await factory.batchAsync(0);
+            expect(results).toEqual([]);
         });
     });
 
@@ -704,9 +772,277 @@ describe('Factory class functionality', () => {
         });
     });
 
+    describe('Persistence Adapters', () => {
+        interface TestUser {
+            email: string;
+            id: string;
+            name: string;
+        }
+
+        const userFactory = new Factory<TestUser>((faker) => ({
+            email: faker.internet.email(),
+            id: faker.string.uuid(),
+            name: faker.person.fullName(),
+        }));
+
+        describe('MongooseAdapter', () => {
+            it('creates a single document', async () => {
+                const mockModel = {
+                    create: vi
+                        .fn()
+                        .mockImplementation((data: any) =>
+                            Promise.resolve(data),
+                        ),
+                    insertMany: vi.fn(),
+                };
+
+                const adapter = new MongooseAdapter<TestUser>(mockModel);
+                const user = await userFactory.create(undefined, { adapter });
+                expect(mockModel.create).toHaveBeenCalledWith(user);
+                expect(user).toEqual(
+                    expect.objectContaining({
+                        email: expect.any(String),
+                        id: expect.any(String),
+                        name: expect.any(String),
+                    }),
+                );
+            });
+
+            it('creates multiple documents', async () => {
+                const mockModel = {
+                    create: vi.fn(),
+                    insertMany: vi
+                        .fn()
+                        .mockImplementation((docs: any[]) =>
+                            Promise.resolve(docs),
+                        ),
+                };
+
+                const adapter = new MongooseAdapter<TestUser>(mockModel);
+                const users = await userFactory.createMany(3, undefined, {
+                    adapter,
+                });
+                expect(mockModel.insertMany).toHaveBeenCalledWith(users);
+                expect(users).toHaveLength(3);
+                users.forEach((user) => {
+                    expect(user).toEqual(
+                        expect.objectContaining({
+                            email: expect.any(String),
+                            id: expect.any(String),
+                            name: expect.any(String),
+                        }),
+                    );
+                });
+            });
+        });
+
+        describe('PrismaAdapter', () => {
+            it('creates a single record', async () => {
+                const mockModel = {
+                    create: vi
+                        .fn()
+                        .mockImplementation(({ data }) =>
+                            Promise.resolve(data),
+                        ),
+                    createMany: vi.fn(),
+                };
+
+                const adapter = new PrismaAdapter<TestUser>(mockModel);
+                const user = await userFactory.create(undefined, { adapter });
+                expect(mockModel.create).toHaveBeenCalledWith({
+                    data: expect.objectContaining({
+                        email: expect.any(String),
+                        id: expect.any(String),
+                        name: expect.any(String),
+                    }),
+                });
+                expect(user).toEqual(
+                    expect.objectContaining({
+                        email: expect.any(String),
+                        id: expect.any(String),
+                        name: expect.any(String),
+                    }),
+                );
+            });
+
+            it('creates multiple records', async () => {
+                const mockModel = {
+                    create: vi.fn(),
+                    createMany: vi
+                        .fn()
+                        .mockImplementation(({ data }: { data: TestUser[] }) =>
+                            Promise.resolve({ count: data.length }),
+                        ),
+                };
+
+                const adapter = new PrismaAdapter<TestUser>(mockModel);
+                const users = await userFactory.createMany(3, undefined, {
+                    adapter,
+                });
+                expect(mockModel.createMany).toHaveBeenCalledWith({
+                    data: users,
+                });
+                expect(users).toHaveLength(3);
+            });
+        });
+
+        describe('TypeORMAdapter', () => {
+            it('creates a single entity', async () => {
+                const mockRepository = {
+                    create: vi.fn().mockImplementation((data: any) => data),
+                    save: vi
+                        .fn()
+                        .mockImplementation((data: any) =>
+                            Promise.resolve(data),
+                        ),
+                };
+
+                const adapter = new TypeORMAdapter<TestUser>(mockRepository);
+                const user = await userFactory.create(undefined, { adapter });
+                expect(mockRepository.create).toHaveBeenCalledWith(user);
+                expect(mockRepository.save).toHaveBeenCalledWith(user);
+                expect(user).toEqual(
+                    expect.objectContaining({
+                        email: expect.any(String),
+                        id: expect.any(String),
+                        name: expect.any(String),
+                    }),
+                );
+            });
+
+            it('creates multiple entities', async () => {
+                const mockRepository = {
+                    create: vi.fn().mockImplementation((data: any) => data),
+                    save: vi
+                        .fn()
+                        .mockImplementation((data: any) =>
+                            Promise.resolve(data),
+                        ),
+                };
+
+                const adapter = new TypeORMAdapter<TestUser>(mockRepository);
+                const users = await userFactory.createMany(3, undefined, {
+                    adapter,
+                });
+                expect(mockRepository.create).toHaveBeenCalledWith(users);
+                expect(mockRepository.save).toHaveBeenCalledWith(users);
+                expect(users).toHaveLength(3);
+                users.forEach((user) => {
+                    expect(user).toEqual(
+                        expect.objectContaining({
+                            email: expect.any(String),
+                            id: expect.any(String),
+                            name: expect.any(String),
+                        }),
+                    );
+                });
+            });
+        });
+
+        describe('Custom Adapter', () => {
+            it('uses a custom persistence adapter', async () => {
+                const mockAdapter: PersistenceAdapter<TestUser> = {
+                    create: vi
+                        .fn()
+                        .mockImplementation((data: any) =>
+                            Promise.resolve(data),
+                        ),
+                    createMany: vi
+                        .fn()
+                        .mockImplementation((data: any) =>
+                            Promise.resolve(data),
+                        ),
+                };
+
+                // Test single create
+                const user = await userFactory.create(undefined, {
+                    adapter: mockAdapter,
+                });
+                expect(mockAdapter.create).toHaveBeenCalledWith(user);
+                expect(user).toEqual(
+                    expect.objectContaining({
+                        email: expect.any(String),
+                        id: expect.any(String),
+                        name: expect.any(String),
+                    }),
+                );
+
+                // Test batch create
+                const users = await userFactory.createMany(2, undefined, {
+                    adapter: mockAdapter,
+                });
+                expect(mockAdapter.createMany).toHaveBeenCalledWith(users);
+                expect(users).toHaveLength(2);
+            });
+        });
+
+        it('throws error when no persistence adapter is configured', async () => {
+            const factory = new Factory<TestUser>((faker) => ({
+                email: faker.internet.email(),
+                id: faker.string.uuid(),
+                name: faker.person.fullName(),
+            }));
+
+            await expect(factory.create()).rejects.toThrow(
+                'No persistence adapter configured. Provide an adapter in options or set a default adapter.',
+            );
+        });
+
+        it('uses default adapter when set with withAdapter', async () => {
+            const mockAdapter: PersistenceAdapter<TestUser> = {
+                create: vi
+                    .fn()
+                    .mockImplementation((data: any) => Promise.resolve(data)),
+                createMany: vi
+                    .fn()
+                    .mockImplementation((data: any) => Promise.resolve(data)),
+            };
+
+            const factory = new Factory<TestUser>((faker) => ({
+                email: faker.internet.email(),
+                id: faker.string.uuid(),
+                name: faker.person.fullName(),
+            })).withAdapter(mockAdapter);
+
+            const user = await factory.create();
+            expect(mockAdapter.create).toHaveBeenCalledWith(user);
+
+            const users = await factory.createMany(2);
+            expect(mockAdapter.createMany).toHaveBeenCalledWith(users);
+        });
+
+        it('options adapter overrides default adapter', async () => {
+            const defaultAdapter: PersistenceAdapter<TestUser> = {
+                create: vi.fn(),
+                createMany: vi.fn(),
+            };
+
+            const optionsAdapter: PersistenceAdapter<TestUser> = {
+                create: vi
+                    .fn()
+                    .mockImplementation((data: any) => Promise.resolve(data)),
+                createMany: vi
+                    .fn()
+                    .mockImplementation((data: any) => Promise.resolve(data)),
+            };
+
+            const factory = new Factory<TestUser>((faker) => ({
+                email: faker.internet.email(),
+                id: faker.string.uuid(),
+                name: faker.person.fullName(),
+            })).withAdapter(defaultAdapter);
+
+            await factory.create(undefined, { adapter: optionsAdapter });
+            expect(defaultAdapter.create).not.toHaveBeenCalled();
+            expect(optionsAdapter.create).toHaveBeenCalled();
+        });
+    });
+
     describe('edge cases and stress tests', () => {
         it('should handle very large batch sizes efficiently', () => {
-            const factory = new Factory<{ id: number }>((_, i) => ({ id: i }));
+            const factory = new Factory<{ id: number }>((_, i) => ({
+                id: i,
+            }));
             const startTime = Date.now();
             const results = factory.batch(10_000);
             const duration = Date.now() - startTime;
@@ -794,7 +1130,9 @@ describe('Factory class functionality', () => {
             const withNull = factory.build({ value: null });
             expect(withNull.value).toBeNull();
 
-            const withUndefined = factory.build({ optional: undefined });
+            const withUndefined = factory.build({
+                optional: undefined,
+            });
             expect(withUndefined.optional).toBeUndefined();
         });
 
@@ -948,12 +1286,13 @@ describe('Factory class functionality', () => {
         });
 
         it('should handle batch with override object', () => {
-            const factory = new Factory<{ index: number; value: string }>(
-                (f, i) => ({
-                    index: i,
-                    value: f.lorem.word(),
-                }),
-            );
+            const factory = new Factory<{
+                index: number;
+                value: string;
+            }>((f, i) => ({
+                index: i,
+                value: f.lorem.word(),
+            }));
 
             const results = factory.batch(5, { value: 'overridden' });
 

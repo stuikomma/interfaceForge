@@ -203,6 +203,7 @@ export default eslintTS.config(
         },
         rules: {
             '@typescript-eslint/no-explicit-any': 'off',
+            'n/no-unpublished-import': 'off',
             'no-console': 'off',
             'unicorn/prefer-top-level-await': 'off',
         },

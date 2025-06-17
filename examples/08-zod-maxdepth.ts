@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod/v4';
-import { ZodFactory } from '../src/zod';
+import { ZodFactory } from 'interface-forge/zod';
 
 // Example 1: Understanding the Problem
 // When maxDepth is reached, the factory returns empty objects {}
