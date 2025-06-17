@@ -87,7 +87,7 @@ import {
     isNotNullish,
     isObject,
 } from '@tool-belt/type-predicates';
-import { PartialFactoryFunction } from './types';
+import { PartialFactoryFunction } from '.';
 import {
     COLLECTION_SIZES,
     DEFAULT_MAX_DEPTH,
