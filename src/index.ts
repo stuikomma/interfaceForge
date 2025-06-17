@@ -444,6 +444,25 @@ export class Factory<
     }
 
     /**
+     * Creates a new factory where all properties are optional (Partial<T>).
+     * This is useful for creating test data where only specific fields need to be set.
+     *
+     * @returns A new factory that produces Partial<T> objects
+     */
+    partial(): Factory<Partial<T>> {
+        return new Factory<Partial<T>>(
+            (_, iteration) => {
+                const fullValues = this.factory(this, iteration);
+                if (fullValues instanceof Promise) {
+                    return fullValues as Promise<FactorySchema<Partial<T>>>;
+                }
+                return fullValues as FactorySchema<Partial<T>>;
+            },
+            { maxDepth: this.options?.maxDepth ?? DEFAULT_MAX_DEPTH },
+        );
+    }
+
+    /**
      * Creates a generator that yields random values from an iterable without consecutive duplicates.
      * Each value is randomly selected with replacement, but the generator ensures the same value
      * is never returned twice in a row (unless the iterable contains only one element).

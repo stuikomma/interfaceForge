@@ -335,4 +335,38 @@ describe('Factory Type Tests', () => {
         expectTypeOf(post.author).not.toBeAny();
         expectTypeOf(post.author).not.toBeUnknown();
     });
+
+    it('should type partial method correctly', () => {
+        const userFactory = new Factory<User>((faker) => ({
+            age: faker.number.int({ max: 80, min: 18 }),
+            createdAt: faker.date.past(),
+            email: faker.internet.email(),
+            id: faker.string.uuid(),
+            isActive: faker.datatype.boolean(),
+            name: faker.person.fullName(),
+        }));
+
+        const partialUserFactory = userFactory.partial();
+        const partialUser = partialUserFactory.build();
+
+        expectTypeOf(partialUserFactory).toEqualTypeOf<
+            Factory<Partial<User>>
+        >();
+        expectTypeOf(partialUser).toEqualTypeOf<Partial<User>>();
+
+        // All properties should be optional
+        expectTypeOf(partialUser.id).toEqualTypeOf<string | undefined>();
+        expectTypeOf(partialUser.name).toEqualTypeOf<string | undefined>();
+        expectTypeOf(partialUser.email).toEqualTypeOf<string | undefined>();
+        expectTypeOf(partialUser.age).toEqualTypeOf<number | undefined>();
+        expectTypeOf(partialUser.isActive).toEqualTypeOf<boolean | undefined>();
+        expectTypeOf(partialUser.createdAt).toEqualTypeOf<Date | undefined>();
+
+        // Should be able to build with only some properties
+        const customPartialUser = partialUserFactory.build({
+            email: 'john@example.com',
+            name: 'John Doe',
+        });
+        expectTypeOf(customPartialUser).toEqualTypeOf<Partial<User>>();
+    });
 });

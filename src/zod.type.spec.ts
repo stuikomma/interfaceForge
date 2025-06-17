@@ -1,6 +1,7 @@
 /* eslint-disable vitest/expect-expect,@typescript-eslint/no-unused-vars */
 import { expectTypeOf } from 'expect-type';
 import { z } from 'zod/v4';
+import { Factory } from './index';
 import { ZodFactory } from './zod';
 
 describe('ZodFactory Type Tests', () => {
@@ -400,5 +401,85 @@ describe('ZodFactory Type Tests', () => {
     it('should handle function schemas with custom handlers', () => {
         // Skip this test as z.function() requires special handling in schemas
         // Functions need to be handled through custom type handlers
+    });
+
+    it('should handle partial method from base Factory', () => {
+        const UserSchema = z.object({
+            age: z.number().int().min(18).max(100),
+            createdAt: z.date(),
+            email: z.email(),
+            id: z.uuid(),
+            isActive: z.boolean(),
+            name: z.string(),
+        });
+
+        type User = z.infer<typeof UserSchema>;
+
+        const factory = new ZodFactory(UserSchema);
+        const partialFactory = factory.partial();
+
+        // The partial factory should return Factory<Partial<User>>
+        expectTypeOf(partialFactory).toEqualTypeOf<Factory<Partial<User>>>();
+
+        // Build result should be Partial<User>
+        const partialUser = partialFactory.build();
+        expectTypeOf(partialUser).toEqualTypeOf<Partial<User>>();
+
+        // All properties should be optional
+        expectTypeOf(partialUser.id).toEqualTypeOf<string | undefined>();
+        expectTypeOf(partialUser.name).toEqualTypeOf<string | undefined>();
+        expectTypeOf(partialUser.email).toEqualTypeOf<string | undefined>();
+        expectTypeOf(partialUser.age).toEqualTypeOf<number | undefined>();
+        expectTypeOf(partialUser.isActive).toEqualTypeOf<boolean | undefined>();
+        expectTypeOf(partialUser.createdAt).toEqualTypeOf<Date | undefined>();
+
+        // Should be able to build with only some properties
+        const customPartialUser = partialFactory.build({
+            age: 30,
+            name: 'Jane Doe',
+        });
+        expectTypeOf(customPartialUser).toEqualTypeOf<Partial<User>>();
+        expectTypeOf(customPartialUser.name).toEqualTypeOf<
+            string | undefined
+        >();
+        expectTypeOf(customPartialUser.age).toEqualTypeOf<number | undefined>();
+    });
+
+    it('should handle partial method with nested schemas', () => {
+        const AddressSchema = z.object({
+            city: z.string(),
+            street: z.string(),
+            zipCode: z.string(),
+        });
+
+        const PersonSchema = z.object({
+            address: AddressSchema,
+            id: z.uuid(),
+            name: z.string(),
+            tags: z.array(z.string()),
+        });
+
+        type Person = z.infer<typeof PersonSchema>;
+        type PartialPerson = Partial<Person>;
+
+        const factory = new ZodFactory(PersonSchema);
+        const partialFactory = factory.partial();
+
+        expectTypeOf(partialFactory).toEqualTypeOf<Factory<PartialPerson>>();
+
+        const partialPerson = partialFactory.build();
+        expectTypeOf(partialPerson).toEqualTypeOf<PartialPerson>();
+
+        // Nested objects should also be optional
+        expectTypeOf(partialPerson.address).toEqualTypeOf<
+            | {
+                  city: string;
+                  street: string;
+                  zipCode: string;
+              }
+            | undefined
+        >();
+
+        expectTypeOf(partialPerson.tags).toEqualTypeOf<string[] | undefined>();
     });
 });

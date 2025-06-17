@@ -394,6 +394,193 @@ describe('Factory class functionality', () => {
         });
     });
 
+    describe('partial method', () => {
+        interface User {
+            age: number;
+            createdAt: Date;
+            email: string;
+            id: string;
+            isActive: boolean;
+            name: string;
+        }
+
+        interface ComplexUser {
+            contacts: {
+                email: string;
+                phone: string;
+            };
+            id: string;
+            profile: {
+                bio: string;
+                name: string;
+            };
+            settings: {
+                notifications: boolean;
+                theme: string;
+            };
+            tags: string[];
+        }
+
+        it('creates a factory that returns Partial<T>', () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                age: factory.number.int({ max: 80, min: 18 }),
+                createdAt: factory.date.past(),
+                email: factory.internet.email(),
+                id: factory.string.uuid(),
+                isActive: factory.datatype.boolean(),
+                name: factory.person.fullName(),
+            }));
+
+            const partialUserFactory = UserFactory.partial();
+            const partialUser = partialUserFactory.build();
+
+            // All properties should be present but values can be undefined
+            expect(partialUser).toBeDefined();
+            expect(typeof partialUser).toBe('object');
+
+            // The generated object should have all properties from the original factory
+            expect('id' in partialUser).toBe(true);
+            expect('name' in partialUser).toBe(true);
+            expect('email' in partialUser).toBe(true);
+            expect('age' in partialUser).toBe(true);
+            expect('isActive' in partialUser).toBe(true);
+            expect('createdAt' in partialUser).toBe(true);
+        });
+
+        it('allows overriding specific properties', () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                age: factory.number.int({ max: 80, min: 18 }),
+                createdAt: factory.date.past(),
+                email: factory.internet.email(),
+                id: factory.string.uuid(),
+                isActive: factory.datatype.boolean(),
+                name: factory.person.fullName(),
+            }));
+
+            const partialUserFactory = UserFactory.partial();
+            const customPartialUser = partialUserFactory.build({
+                age: 30,
+                email: 'john@example.com',
+                name: 'John Doe',
+            });
+
+            expect(customPartialUser.name).toBe('John Doe');
+            expect(customPartialUser.email).toBe('john@example.com');
+            expect(customPartialUser.age).toBe(30);
+            // Other properties should still be generated
+            expect(customPartialUser.id).toBeDefined();
+            expect(typeof customPartialUser.isActive).toBe('boolean');
+            expect(customPartialUser.createdAt).toBeInstanceOf(Date);
+        });
+
+        it('works with complex nested objects', () => {
+            const ComplexUserFactory = new Factory<ComplexUser>((factory) => ({
+                contacts: {
+                    email: factory.internet.email(),
+                    phone: factory.phone.number(),
+                },
+                id: factory.string.uuid(),
+                profile: {
+                    bio: factory.lorem.paragraph(),
+                    name: factory.person.fullName(),
+                },
+                settings: {
+                    notifications: factory.datatype.boolean(),
+                    theme: factory.helpers.arrayElement(['light', 'dark']),
+                },
+                tags: factory.helpers.multiple(() => factory.lorem.word(), {
+                    count: 3,
+                }),
+            }));
+
+            const partialComplexFactory = ComplexUserFactory.partial();
+            const partialComplex = partialComplexFactory.build();
+
+            // Nested objects should still be fully generated
+            expect(partialComplex.profile).toBeDefined();
+            if (partialComplex.profile) {
+                expect(partialComplex.profile.name).toBeDefined();
+                expect(partialComplex.profile.bio).toBeDefined();
+            }
+
+            expect(partialComplex.contacts).toBeDefined();
+            if (partialComplex.contacts) {
+                expect(partialComplex.contacts.email).toBeDefined();
+                expect(partialComplex.contacts.phone).toBeDefined();
+            }
+
+            expect(partialComplex.tags).toBeDefined();
+            expect(Array.isArray(partialComplex.tags)).toBe(true);
+        });
+
+        it('can be chained with other methods', () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                age: factory.number.int({ max: 80, min: 18 }),
+                createdAt: factory.date.past(),
+                email: factory.internet.email(),
+                id: factory.string.uuid(),
+                isActive: factory.datatype.boolean(),
+                name: factory.person.fullName(),
+            }));
+
+            let hookCalled = false;
+            const partialWithHook = UserFactory.partial().afterBuild((user) => {
+                hookCalled = true;
+                return user;
+            });
+
+            const user = partialWithHook.build();
+            expect(hookCalled).toBe(true);
+            expect(user).toBeDefined();
+        });
+
+        it('works with batch operations', () => {
+            const UserFactory = new Factory<User>((factory) => ({
+                age: factory.number.int({ max: 80, min: 18 }),
+                createdAt: factory.date.past(),
+                email: factory.internet.email(),
+                id: factory.string.uuid(),
+                isActive: factory.datatype.boolean(),
+                name: factory.person.fullName(),
+            }));
+
+            const partialUserFactory = UserFactory.partial();
+            const users = partialUserFactory.batch(5);
+
+            expect(users).toHaveLength(5);
+            users.forEach((user) => {
+                expect(user).toBeDefined();
+                expect(typeof user).toBe('object');
+            });
+
+            // Test batch with overrides
+            const customUsers = partialUserFactory.batch(3, { isActive: true });
+            expect(customUsers).toHaveLength(3);
+            customUsers.forEach((user) => {
+                expect(user.isActive).toBe(true);
+            });
+        });
+
+        it('preserves factory options', () => {
+            const UserFactory = new Factory<User>(
+                (factory) => ({
+                    age: factory.number.int({ max: 80, min: 18 }),
+                    createdAt: factory.date.past(),
+                    email: factory.internet.email(),
+                    id: factory.string.uuid(),
+                    isActive: factory.datatype.boolean(),
+                    name: factory.person.fullName(),
+                }),
+                { maxDepth: 3 },
+            );
+
+            const partialFactory = UserFactory.partial();
+
+            // Test that options are preserved by checking internal state
+            expect(partialFactory.options?.maxDepth).toBe(3);
+        });
+    });
+
     describe('compose method', () => {
         interface User {
             email: string;
