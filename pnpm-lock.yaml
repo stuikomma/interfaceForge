@@ -13,6 +13,15 @@ importers:
             '@tool-belt/type-predicates':
                 specifier: ^1.4.0
                 version: 1.4.0
+            '@vitest/coverage-v8':
+                specifier: ^3.2.3
+                version: 3.2.3(vitest@3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(jiti@2.4.2)(yaml@2.8.0))
+            prettier-plugin-jsdoc:
+                specifier: ^1.3.2
+                version: 1.3.2(prettier@3.5.3)
+            rimraf:
+                specifier: ^6.0.1
+                version: 6.0.1
         devDependencies:
             '@commitlint/cli':
                 specifier: ^19.8.1
@@ -29,9 +38,6 @@ importers:
             '@types/node':
                 specifier: ^24.0.1
                 version: 24.0.1
-            '@vitest/coverage-v8':
-                specifier: ^3.2.3
-                version: 3.2.3(vitest@3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(jiti@2.4.2)(yaml@2.8.0))
             eslint:
                 specifier: ^9.29.0
                 version: 9.29.0(jiti@2.4.2)
@@ -59,9 +65,6 @@ importers:
             eslint-plugin-vitest:
                 specifier: ^0.5.4
                 version: 0.5.4(@typescript-eslint/eslint-plugin@8.34.0(@typescript-eslint/parser@8.34.0(eslint@9.29.0(jiti@2.4.2))(typescript@5.8.3))(eslint@9.29.0(jiti@2.4.2))(typescript@5.8.3))(eslint@9.29.0(jiti@2.4.2))(typescript@5.8.3)(vitest@3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(jiti@2.4.2)(yaml@2.8.0))
-            expect-type:
-                specifier: ^1.2.1
-                version: 1.2.1
             globals:
                 specifier: ^16.2.0
                 version: 16.2.0
@@ -72,17 +75,17 @@ importers:
                 specifier: ^9.1.7
                 version: 9.1.7
             lint-staged:
-                specifier: ^16.1.1
-                version: 16.1.1
+                specifier: ^16.1.0
+                version: 16.1.2
+            mongoose:
+                specifier: ^8.0.0
+                version: 8.15.2
             prettier:
                 specifier: ^3.5.3
                 version: 3.5.3
-            prettier-plugin-jsdoc:
-                specifier: ^1.3.2
-                version: 1.3.2(prettier@3.5.3)
-            rimraf:
-                specifier: ^6.0.1
-                version: 6.0.1
+            prisma:
+                specifier: ^5.0.0
+                version: 5.22.0
             type-fest:
                 specifier: ^4.41.0
                 version: 4.41.0
@@ -755,6 +758,12 @@ packages:
                 integrity: sha512-4aErSrCR/On/e5G2hDP0wjooqDdauzEbIq8hIkIe5pXV0rtWJZvdCEKL0ykZxex+IxIwBp0eGeV48hQN07dXtw==,
             }
 
+    '@mongodb-js/saslprep@1.3.0':
+        resolution:
+            {
+                integrity: sha512-zlayKCsIjYb7/IdfqxorK5+xUMyi4vOKcFy10wKJYc63NSdKI8mNME+uJqfatkPmOSMMUiojrL58IePKBm3gvQ==,
+            }
+
     '@nodelib/fs.scandir@2.1.5':
         resolution:
             {
@@ -782,6 +791,36 @@ packages:
                 integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==,
             }
         engines: { node: '>=14' }
+
+    '@prisma/debug@5.22.0':
+        resolution:
+            {
+                integrity: sha512-AUt44v3YJeggO2ZU5BkXI7M4hu9BF2zzH2iF2V5pyXT/lRTyWiElZ7It+bRH1EshoMRxHgpYg4VB6rCM+mG5jQ==,
+            }
+
+    '@prisma/engines-version@5.22.0-44.605197351a3c8bdd595af2d2a9bc3025bca48ea2':
+        resolution:
+            {
+                integrity: sha512-2PTmxFR2yHW/eB3uqWtcgRcgAbG1rwG9ZriSvQw+nnb7c4uCr3RAcGMb6/zfE88SKlC1Nj2ziUvc96Z379mHgQ==,
+            }
+
+    '@prisma/engines@5.22.0':
+        resolution:
+            {
+                integrity: sha512-UNjfslWhAt06kVL3CjkuYpHAWSO6L4kDCVPegV6itt7nD1kSJavd3vhgAEhjglLJJKEdJ7oIqDJ+yHk6qO8gPA==,
+            }
+
+    '@prisma/fetch-engine@5.22.0':
+        resolution:
+            {
+                integrity: sha512-bkrD/Mc2fSvkQBV5EpoFcZ87AvOgDxbG99488a5cexp5Ccny+UM6MAe/UFkUC0wLYD9+9befNOqGiIJhhq+HbA==,
+            }
+
+    '@prisma/get-platform@5.22.0':
+        resolution:
+            {
+                integrity: sha512-pHhpQdr1UPFpt+zFfnPazhulaZYCUqeIcPpJViYoq9R+D/yw4fjE+CtnsnKzPYm0ddUbeXUzjGVGIRVgPDCk4Q==,
+            }
 
     '@rollup/pluginutils@5.1.4':
         resolution:
@@ -1104,6 +1143,18 @@ packages:
                 integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==,
             }
 
+    '@types/webidl-conversions@7.0.3':
+        resolution:
+            {
+                integrity: sha512-CiJJvcRtIgzadHCYXw7dqEnMNRjhGZlYK05Mj9OyktqV8uVT8fD2BFOB7S1uwBE3Kj2Z+4UyPmFw/Ixgw/LAlA==,
+            }
+
+    '@types/whatwg-url@11.0.5':
+        resolution:
+            {
+                integrity: sha512-coYR071JRaHa+xoEvvYqvnIHaVqaYrLPbsufM9BF63HkwI5Lgmy2QR8Q5K/lYDYo5AK82wOvSOS0UsLTpTG7uQ==,
+            }
+
     '@typescript-eslint/eslint-plugin@8.34.0':
         resolution:
             {
@@ -1413,12 +1464,6 @@ packages:
                 integrity: sha512-PRA911Blj99jR5RMeTunVbNXMF6Lp4vZXnk5GQjcnUWUTsrXtekg/pnmFFI2u/I36Y/2bITGS30GZCXei6uNkA==,
             }
 
-    ajv@8.17.1:
-        resolution:
-            {
-                integrity: sha512-B/gBuNg5SiMTrPkC+A2+cW0RszwxYmn6VYxB/inlBStS5nx6xHIt/ehKRhIMhqusl7a8LjQoZnjCs5vhwxOQ1g==,
-            }
-
     alien-signals@0.4.14:
         resolution:
             {
@@ -1556,6 +1601,13 @@ packages:
             }
         engines: { node: ^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7 }
         hasBin: true
+
+    bson@6.10.4:
+        resolution:
+            {
+                integrity: sha512-WIsKqkSC0ABoBJuT1LEX+2HEvNmNKKgnTAyd0fL8qzK4SH2i9NXg+t08YtdZp/V9IZ33cxe3iV4yM0qg8lMQng==,
+            }
+        engines: { node: '>=16.20.1' }
 
     builtin-modules@5.0.0:
         resolution:
@@ -1820,10 +1872,10 @@ packages:
             supports-color:
                 optional: true
 
-    decode-named-character-reference@1.1.0:
+    decode-named-character-reference@1.2.0:
         resolution:
             {
-                integrity: sha512-Wy+JTSbFThEOXQIR2L6mxJvEs+veIzpmqD7ynWxMXGpnk3smkHQOp6forLdHsKpAMW9iJpaBBIxz285t1n1C3w==,
+                integrity: sha512-c6fcElNV6ShtZXmsgNgFFV5tVX2PaV4g+MOAkb8eXHvn6sryJBrZa9r0zV6+dtTyoCKxtDy5tyQ5ZwQuidtd+Q==,
             }
 
     deep-eql@5.0.2:
@@ -2222,12 +2274,6 @@ packages:
         resolution:
             {
                 integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==,
-            }
-
-    fast-uri@3.0.6:
-        resolution:
-            {
-                integrity: sha512-Atfo14OibSv5wAp4VWNsFYE1AchQRTv9cBGWET4pZWHzYshFSS9NQI6I57rdKn9croWVMbYFbLhJ+yJvmZIIHw==,
             }
 
     fastq@1.19.1:
@@ -2807,6 +2853,13 @@ packages:
             }
         engines: { '0': node >= 0.2.0 }
 
+    kareem@2.6.3:
+        resolution:
+            {
+                integrity: sha512-C3iHfuGUXK2u8/ipq9LfjFfXFxAZMQJJq7vLS45r3D9Y2xQ/m4S8zaR4zMLFWh9AsNPXmcFfUDhTEO8UIC/V6Q==,
+            }
+        engines: { node: '>=12.0.0' }
+
     keyv@4.5.4:
         resolution:
             {
@@ -2845,10 +2898,10 @@ packages:
                 integrity: sha512-5aHCbzQRADcdP+ATqnDuhhJ/MRIqDkZX5pyjFHRRysS8vZ5AbqGEoFIb6pYHPZ+L/OC2Lc+xT8uHVVR5CAK/wQ==,
             }
 
-    lint-staged@16.1.1:
+    lint-staged@16.1.2:
         resolution:
             {
-                integrity: sha512-kVZvRAHw9WuufENnwuZLiB1X/8B8YpGszzjMET0bP+uJSjjB7KXeaX2ckYRtQyHfeQdCWMc6tRK34t4geHL9sg==,
+                integrity: sha512-sQKw2Si2g9KUZNY3XNvRuDq4UJqpHwF0/FQzZR2M7I5MvtpWvibikCjUVJzZdGE0ByurEl3KQNvsGetd1ty1/Q==,
             }
         engines: { node: '>=20.17' }
         hasBin: true
@@ -3029,6 +3082,12 @@ packages:
         resolution:
             {
                 integrity: sha512-Lf+9+2r+Tdp5wXDXC4PcIBjTDtq4UKjCPMQhKIuzpJNW0b96kVqSwW0bT7FhRSfmAiFYgP+SCRvdrDozfh0U5w==,
+            }
+
+    memory-pager@1.5.0:
+        resolution:
+            {
+                integrity: sha512-ZS4Bp4r/Zoeq6+NLJpP+0Zzm0pR8whtGPf1XExKLJBAczGMnSi3It14OiNCStjQjM6NU1okjQGSxgEZN8eBYKg==,
             }
 
     meow@12.1.1:
@@ -3244,6 +3303,63 @@ packages:
             {
                 integrity: sha512-qmdSIPC4bDJXgZTCR7XosJiNKySV7O215tsPtDN9iEO/7q/76b/ijtgRu/+epFXSJhijtTCCGp3DWS549P3xKw==,
             }
+
+    mongodb-connection-string-url@3.0.2:
+        resolution:
+            {
+                integrity: sha512-rMO7CGo/9BFwyZABcKAWL8UJwH/Kc2x0g72uhDWzG48URRax5TCIcJ7Rc3RZqffZzO/Gwff/jyKwCU9TN8gehA==,
+            }
+
+    mongodb@6.16.0:
+        resolution:
+            {
+                integrity: sha512-D1PNcdT0y4Grhou5Zi/qgipZOYeWrhLEpk33n3nm6LGtz61jvO88WlrWCK/bigMjpnOdAUKKQwsGIl0NtWMyYw==,
+            }
+        engines: { node: '>=16.20.1' }
+        peerDependencies:
+            '@aws-sdk/credential-providers': ^3.188.0
+            '@mongodb-js/zstd': ^1.1.0 || ^2.0.0
+            gcp-metadata: ^5.2.0
+            kerberos: ^2.0.1
+            mongodb-client-encryption: '>=6.0.0 <7'
+            snappy: ^7.2.2
+            socks: ^2.7.1
+        peerDependenciesMeta:
+            '@aws-sdk/credential-providers':
+                optional: true
+            '@mongodb-js/zstd':
+                optional: true
+            gcp-metadata:
+                optional: true
+            kerberos:
+                optional: true
+            mongodb-client-encryption:
+                optional: true
+            snappy:
+                optional: true
+            socks:
+                optional: true
+
+    mongoose@8.15.2:
+        resolution:
+            {
+                integrity: sha512-GLwghI2dS/n5BTBljspF4+FsCEBeHgnMQyX8GloYkLkl+MKljKkjcP9DhLr47Yod2RO1RCr4vZ3evUZAyuoILw==,
+            }
+        engines: { node: '>=16.20.1' }
+
+    mpath@0.9.0:
+        resolution:
+            {
+                integrity: sha512-ikJRQTk8hw5DEoFVxHG1Gn9T/xcjtdnOKIU1JTmGjZZlg9LST2mBLmcX3/ICIbgJydT2GOc15RnNy5mHmzfSew==,
+            }
+        engines: { node: '>=4.0.0' }
+
+    mquery@5.0.0:
+        resolution:
+            {
+                integrity: sha512-iQMncpmEK8R8ncT8HJGsGc9Dsp8xcgYMVSbs5jgnm1lFHTZqMJTUWTDx1LBO8+mK3tPNZWFLBghQEIOULSTHZg==,
+            }
+        engines: { node: '>=14.0.0' }
 
     ms@2.1.3:
         resolution:
@@ -3531,6 +3647,14 @@ packages:
         engines: { node: '>=14' }
         hasBin: true
 
+    prisma@5.22.0:
+        resolution:
+            {
+                integrity: sha512-vtpjW3XuYCSnMsNVBjLMNkTj6OZbudcPPTPYHqX0CJfpcdWciI1dM8uHETwmDxxiqEwCIE6WvXucWUetJgfu/A==,
+            }
+        engines: { node: '>=16.13' }
+        hasBin: true
+
     punycode.js@2.3.1:
         resolution:
             {
@@ -3744,6 +3868,12 @@ packages:
             }
         engines: { node: '>= 0.4' }
 
+    sift@17.1.3:
+        resolution:
+            {
+                integrity: sha512-Rtlj66/b0ICeFzYTuNvX/EF1igRbbnGSvEyT79McoZa/DeGhMyC5pWKOEsZKnpkqtSeovd5FL/bjHWC3CIIvCQ==,
+            }
+
     siginfo@2.0.0:
         resolution:
             {
@@ -3791,6 +3921,12 @@ packages:
                 integrity: sha512-UjgapumWlbMhkBgzT7Ykc5YXUT46F0iKu8SGXq0bcwP5dz/h0Plj6enJqjz1Zbq2l5WaqYnrVbwWOWMyF3F47g==,
             }
         engines: { node: '>=0.10.0' }
+
+    sparse-bitfield@3.0.3:
+        resolution:
+            {
+                integrity: sha512-kvzhi7vqKTfkh0PZU+2D2PIllw2ymqJKujUcyPMd9Y75Nv4nPbGJZXNhxsgdQab2BmlDct1YnfQCguEvHr7VsQ==,
+            }
 
     spdx-exceptions@2.5.0:
         resolution:
@@ -3997,6 +4133,13 @@ packages:
                 integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==,
             }
         engines: { node: '>=8.0' }
+
+    tr46@5.1.1:
+        resolution:
+            {
+                integrity: sha512-hdF5ZgjTqgAntKkklYw0R03MG2x/bSzTtkxmIRw/sTNV8YXsCJ1tfLAX23lhxhHJlEf3CRCOCGGWw3vI3GaSPw==,
+            }
+        engines: { node: '>=18' }
 
     ts-api-utils@1.4.3:
         resolution:
@@ -4275,12 +4418,26 @@ packages:
                 integrity: sha512-/BpdSx+yCQGnCvecbyXdxHDkuk55/G3xwnC0GqY4gmQ3j+A+g8kzzgB4Nk/SINjqn6+waqw3EgbVF2QKExkRxQ==,
             }
 
+    webidl-conversions@7.0.0:
+        resolution:
+            {
+                integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==,
+            }
+        engines: { node: '>=12' }
+
     whatwg-encoding@2.0.0:
         resolution:
             {
                 integrity: sha512-p41ogyeMUrw3jWclHWTQg1k05DSVXPLcVxRTYsXUk+ZooOCZLcoYgPZ/HL/D/N+uQPOtcp1me1WhBEaX02mhWg==,
             }
         engines: { node: '>=12' }
+
+    whatwg-url@14.2.0:
+        resolution:
+            {
+                integrity: sha512-De72GdQZzNTUBBChsXueQUnPKDkg/5A5zp7pFDuQAj5UFoENpiACU0wlCvzpAGnTkj++ihpKwKyYewn/XNUbKw==,
+            }
+        engines: { node: '>=18' }
 
     which@2.0.2:
         resolution:
@@ -4429,7 +4586,7 @@ snapshots:
     '@commitlint/config-validator@19.8.1':
         dependencies:
             '@commitlint/types': 19.8.1
-            ajv: 8.17.1
+            ajv: 8.13.0
 
     '@commitlint/ensure@19.8.1':
         dependencies:
@@ -4754,6 +4911,10 @@ snapshots:
 
     '@microsoft/tsdoc@0.15.1': {}
 
+    '@mongodb-js/saslprep@1.3.0':
+        dependencies:
+            sparse-bitfield: 3.0.3
+
     '@nodelib/fs.scandir@2.1.5':
         dependencies:
             '@nodelib/fs.stat': 2.0.5
@@ -4768,6 +4929,28 @@ snapshots:
 
     '@pkgjs/parseargs@0.11.0':
         optional: true
+
+    '@prisma/debug@5.22.0': {}
+
+    '@prisma/engines-version@5.22.0-44.605197351a3c8bdd595af2d2a9bc3025bca48ea2':
+        {}
+
+    '@prisma/engines@5.22.0':
+        dependencies:
+            '@prisma/debug': 5.22.0
+            '@prisma/engines-version': 5.22.0-44.605197351a3c8bdd595af2d2a9bc3025bca48ea2
+            '@prisma/fetch-engine': 5.22.0
+            '@prisma/get-platform': 5.22.0
+
+    '@prisma/fetch-engine@5.22.0':
+        dependencies:
+            '@prisma/debug': 5.22.0
+            '@prisma/engines-version': 5.22.0-44.605197351a3c8bdd595af2d2a9bc3025bca48ea2
+            '@prisma/get-platform': 5.22.0
+
+    '@prisma/get-platform@5.22.0':
+        dependencies:
+            '@prisma/debug': 5.22.0
 
     '@rollup/pluginutils@5.1.4(rollup@4.43.0)':
         dependencies:
@@ -4930,6 +5113,12 @@ snapshots:
             undici-types: 7.8.0
 
     '@types/unist@3.0.3': {}
+
+    '@types/webidl-conversions@7.0.3': {}
+
+    '@types/whatwg-url@11.0.5':
+        dependencies:
+            '@types/webidl-conversions': 7.0.3
 
     '@typescript-eslint/eslint-plugin@8.34.0(@typescript-eslint/parser@8.34.0(eslint@9.29.0(jiti@2.4.2))(typescript@5.8.3))(eslint@9.29.0(jiti@2.4.2))(typescript@5.8.3)':
         dependencies:
@@ -5207,13 +5396,6 @@ snapshots:
             require-from-string: 2.0.2
             uri-js: 4.4.1
 
-    ajv@8.17.1:
-        dependencies:
-            fast-deep-equal: 3.1.3
-            fast-uri: 3.0.6
-            json-schema-traverse: 1.0.0
-            require-from-string: 2.0.2
-
     alien-signals@0.4.14: {}
 
     ansi-escapes@7.0.0:
@@ -5279,6 +5461,8 @@ snapshots:
             electron-to-chromium: 1.5.167
             node-releases: 2.0.19
             update-browserslist-db: 1.1.3(browserslist@4.25.0)
+
+    bson@6.10.4: {}
 
     builtin-modules@5.0.0: {}
 
@@ -5414,7 +5598,7 @@ snapshots:
         dependencies:
             ms: 2.1.3
 
-    decode-named-character-reference@1.1.0:
+    decode-named-character-reference@1.2.0:
         dependencies:
             character-entities: 2.0.2
 
@@ -5709,8 +5893,6 @@ snapshots:
     fast-json-stable-stringify@2.1.0: {}
 
     fast-levenshtein@2.0.6: {}
-
-    fast-uri@3.0.6: {}
 
     fastq@1.19.1:
         dependencies:
@@ -6018,6 +6200,8 @@ snapshots:
 
     jsonparse@1.3.1: {}
 
+    kareem@2.6.3: {}
+
     keyv@4.5.4:
         dependencies:
             json-buffer: 3.0.1
@@ -6037,7 +6221,7 @@ snapshots:
         dependencies:
             uc.micro: 2.1.0
 
-    lint-staged@16.1.1:
+    lint-staged@16.1.2:
         dependencies:
             chalk: 5.4.1
             commander: 14.0.0
@@ -6144,7 +6328,7 @@ snapshots:
         dependencies:
             '@types/mdast': 4.0.4
             '@types/unist': 3.0.3
-            decode-named-character-reference: 1.1.0
+            decode-named-character-reference: 1.2.0
             devlop: 1.1.0
             mdast-util-to-string: 4.0.0
             micromark: 4.0.2
@@ -6163,13 +6347,15 @@ snapshots:
 
     mdurl@2.0.0: {}
 
+    memory-pager@1.5.0: {}
+
     meow@12.1.1: {}
 
     merge2@1.4.1: {}
 
     micromark-core-commonmark@2.0.3:
         dependencies:
-            decode-named-character-reference: 1.1.0
+            decode-named-character-reference: 1.2.0
             devlop: 1.1.0
             micromark-factory-destination: 2.0.1
             micromark-factory-label: 2.0.1
@@ -6244,7 +6430,7 @@ snapshots:
 
     micromark-util-decode-string@2.0.1:
         dependencies:
-            decode-named-character-reference: 1.1.0
+            decode-named-character-reference: 1.2.0
             micromark-util-character: 2.1.1
             micromark-util-decode-numeric-character-reference: 2.0.2
             micromark-util-symbol: 2.0.1
@@ -6282,7 +6468,7 @@ snapshots:
         dependencies:
             '@types/debug': 4.1.12
             debug: 4.4.1
-            decode-named-character-reference: 1.1.0
+            decode-named-character-reference: 1.2.0
             devlop: 1.1.0
             micromark-core-commonmark: 2.0.3
             micromark-factory-space: 2.0.1
@@ -6337,6 +6523,44 @@ snapshots:
             pathe: 2.0.3
             pkg-types: 1.3.1
             ufo: 1.6.1
+
+    mongodb-connection-string-url@3.0.2:
+        dependencies:
+            '@types/whatwg-url': 11.0.5
+            whatwg-url: 14.2.0
+
+    mongodb@6.16.0:
+        dependencies:
+            '@mongodb-js/saslprep': 1.3.0
+            bson: 6.10.4
+            mongodb-connection-string-url: 3.0.2
+
+    mongoose@8.15.2:
+        dependencies:
+            bson: 6.10.4
+            kareem: 2.6.3
+            mongodb: 6.16.0
+            mpath: 0.9.0
+            mquery: 5.0.0
+            ms: 2.1.3
+            sift: 17.1.3
+        transitivePeerDependencies:
+            - '@aws-sdk/credential-providers'
+            - '@mongodb-js/zstd'
+            - gcp-metadata
+            - kerberos
+            - mongodb-client-encryption
+            - snappy
+            - socks
+            - supports-color
+
+    mpath@0.9.0: {}
+
+    mquery@5.0.0:
+        dependencies:
+            debug: 4.4.1
+        transitivePeerDependencies:
+            - supports-color
 
     ms@2.1.3: {}
 
@@ -6478,6 +6702,12 @@ snapshots:
 
     prettier@3.5.3: {}
 
+    prisma@5.22.0:
+        dependencies:
+            '@prisma/engines': 5.22.0
+        optionalDependencies:
+            fsevents: 2.3.3
+
     punycode.js@2.3.1: {}
 
     punycode@2.3.1: {}
@@ -6604,6 +6834,8 @@ snapshots:
             side-channel-map: 1.0.1
             side-channel-weakmap: 1.0.2
 
+    sift@17.1.3: {}
+
     siginfo@2.0.0: {}
 
     signal-exit@4.1.0: {}
@@ -6623,6 +6855,10 @@ snapshots:
     source-map-js@1.2.1: {}
 
     source-map@0.6.1: {}
+
+    sparse-bitfield@3.0.3:
+        dependencies:
+            memory-pager: 1.5.0
 
     spdx-exceptions@2.5.0: {}
 
@@ -6721,6 +6957,10 @@ snapshots:
     to-regex-range@5.0.1:
         dependencies:
             is-number: 7.0.0
+
+    tr46@5.1.1:
+        dependencies:
+            punycode: 2.3.1
 
     ts-api-utils@1.4.3(typescript@5.8.3):
         dependencies:
@@ -6908,9 +7148,16 @@ snapshots:
 
     vscode-uri@3.1.0: {}
 
+    webidl-conversions@7.0.0: {}
+
     whatwg-encoding@2.0.0:
         dependencies:
             iconv-lite: 0.6.3
+
+    whatwg-url@14.2.0:
+        dependencies:
+            tr46: 5.1.1
+            webidl-conversions: 7.0.0
 
     which@2.0.2:
         dependencies:
