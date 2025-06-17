@@ -1,65 +1,46 @@
-import { PersistenceAdapter } from '../../src/persistence-adapter';
+// Prisma persistence adapter example
 
-/**
- * A persistence adapter for Prisma, allowing `Factory` to save generated
- * objects to a database via a Prisma client model.
- *
- * @template T The type of the Prisma model.
- */
-export class PrismaAdapter<T> implements PersistenceAdapter<T> {
-    /**
-     * @param model The Prisma client model (e.g., `prisma.user`).
-     * Using `unknown` here as Prisma model types are generated dynamically
-     * and can be complex. For stricter typing, you might define
-     * a generic `PrismaModel<T>` type based on Prisma's generated types.
-     */
-    constructor(private readonly model: unknown) {
-        this.model = model;
-    }
+import { PersistenceAdapter } from '../interface-forge/types';
 
-    /**
-     * Persists a single Prisma record.
-     *
-     * @param data The object to be persisted.
-     * @returns A Promise that resolves with the created Prisma record.
-     */
+interface PrismaModelDelegate<T> {
+    create(args: { data: T }): Promise<T>;
+    createMany(args: { data: T[] }): Promise<{ count: number }>;
+}
+
+export class PrismaAdapter<T> implements PersistenceAdapter<T, T> {
+    constructor(private readonly model: PrismaModelDelegate<T>) {}
+
     async create(data: T): Promise<T> {
-        if (
-            this.model &&
-            typeof this.model === 'object' &&
-            'create' in this.model
-        ) {
-            const createMethod = this.model.create as (args: {
-                data: T;
-            }) => Promise<T>;
-            return await createMethod({ data });
-        }
-        throw new Error('Invalid model: create method not available');
+        return await this.model.create({ data });
     }
 
-    /**
-     * Persists multiple Prisma records in a batch.
-     * Note: Prisma's `createMany` typically returns a count of records created,
-     * not the actual created records. If you need the full records, you'd
-     * need to fetch them after `createMany` or use individual `create` calls.
-     * This implementation attempts to return the input data for now.
-     *
-     * @param data An array of objects to be persisted.
-     * @returns A Promise that resolves with the count of created records for Prisma's `createMany`,
-     * or the input data if returning actual records is needed (and not supported by `createMany`).
-     */
     async createMany(data: T[]): Promise<T[]> {
-        if (
-            this.model &&
-            typeof this.model === 'object' &&
-            'createMany' in this.model
-        ) {
-            const createManyMethod = this.model.createMany as (args: {
-                data: T[];
-            }) => Promise<{ count: number }>;
-            await createManyMethod({ data });
-            return data;
-        }
-        throw new Error('Invalid model: createMany method not available');
+        await this.model.createMany({ data });
+        return data; // Prisma doesn't return created records from createMany
     }
 }
+
+/*
+Usage:
+
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
+
+const userFactory = new Factory<User>((faker) => ({
+    email: faker.internet.email(),
+    name: faker.person.fullName(),
+}));
+
+// Option 1: Set default adapter
+const factoryWithAdapter = userFactory.withAdapter(new PrismaAdapter(prisma.user));
+const user = await factoryWithAdapter.create();
+const users = await factoryWithAdapter.createMany(5);
+
+// Option 2: Pass adapter in options
+const user2 = await userFactory.create(undefined, { 
+    adapter: new PrismaAdapter(prisma.user) 
+});
+const users2 = await userFactory.createMany(5, undefined, { 
+    adapter: new PrismaAdapter(prisma.user) 
+});
+*/

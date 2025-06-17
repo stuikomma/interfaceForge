@@ -1,4 +1,7 @@
 import { Factory, PersistenceAdapter } from './index.js';
+import { MongooseAdapter } from '../examples/adapters/mongoose-adapter.js';
+import { PrismaAdapter } from '../examples/adapters/prisma-adapter.js';
+import { TypeORMAdapter } from '../examples/adapters/typeorm-adapter.js';
 import { describe, expect, it, vi } from 'vitest';
 
 interface TestObject {
@@ -174,6 +177,70 @@ describe('Factory class functionality', () => {
             expect(() => factory.batch(3.14)).toThrow(
                 'Batch size must be a non-negative integer',
             );
+        });
+    });
+
+    describe('batchAsync method', () => {
+        it('creates a batch of objects with async factory', async () => {
+            const factory = new Factory<TestObject>(async (faker) => ({
+                age: await Promise.resolve(
+                    faker.number.int({ max: 65, min: 18 }),
+                ),
+                name: faker.person.firstName(),
+            }));
+
+            const results = await factory.batchAsync(3);
+            expect(results).toHaveLength(3);
+            results.forEach((result) => {
+                expect(result).toEqual(
+                    expect.objectContaining({
+                        age: expect.any(Number),
+                        name: expect.any(String),
+                    }),
+                );
+            });
+        });
+
+        it('applies overrides to async batch', async () => {
+            const factory = new Factory<TestObject>(async (faker) => ({
+                age: await Promise.resolve(25),
+                name: faker.person.firstName(),
+            }));
+
+            const results = await factory.batchAsync(2, { name: 'Override' });
+            expect(results).toHaveLength(2);
+            results.forEach((result) => {
+                expect(result.name).toBe('Override');
+                expect(result.age).toBe(25);
+            });
+        });
+
+        it('applies individual overrides to async batch', async () => {
+            const factory = new Factory<TestObject>(async (faker) => ({
+                age: await Promise.resolve(25),
+                name: faker.person.firstName(),
+            }));
+
+            const overrides = [{ name: 'First' }, { name: 'Second' }];
+            const results = await factory.batchAsync(2, overrides);
+            expect(results[0].name).toBe('First');
+            expect(results[1].name).toBe('Second');
+        });
+
+        it('throws error for invalid batch size in async', async () => {
+            const factory = new Factory<TestObject>(async () => defaultObject);
+            await expect(factory.batchAsync(-1)).rejects.toThrow(
+                'Batch size must be a non-negative integer',
+            );
+            await expect(factory.batchAsync(1.5)).rejects.toThrow(
+                'Batch size must be a non-negative integer',
+            );
+        });
+
+        it('returns empty array when size is 0 in async', async () => {
+            const factory = new Factory<TestObject>(async () => defaultObject);
+            const results = await factory.batchAsync(0);
+            expect(results).toEqual([]);
         });
     });
 
@@ -726,14 +793,11 @@ describe('Factory class functionality', () => {
                         .mockImplementation((data: any) =>
                             Promise.resolve(data),
                         ),
+                    insertMany: vi.fn(),
                 };
 
-                const factory = userFactory.persist({
-                    adapter: 'mongoose',
-                    model: mockModel,
-                });
-
-                const user = await factory.create();
+                const adapter = new MongooseAdapter<TestUser>(mockModel);
+                const user = await userFactory.create(undefined, { adapter });
                 expect(mockModel.create).toHaveBeenCalledWith(user);
                 expect(user).toEqual(
                     expect.objectContaining({
@@ -746,6 +810,7 @@ describe('Factory class functionality', () => {
 
             it('creates multiple documents', async () => {
                 const mockModel = {
+                    create: vi.fn(),
                     insertMany: vi
                         .fn()
                         .mockImplementation((docs: any[]) =>
@@ -753,12 +818,10 @@ describe('Factory class functionality', () => {
                         ),
                 };
 
-                const factory = userFactory.persist({
-                    adapter: 'mongoose',
-                    model: mockModel,
+                const adapter = new MongooseAdapter<TestUser>(mockModel);
+                const users = await userFactory.createMany(3, undefined, {
+                    adapter,
                 });
-
-                const users = await factory.createMany(3);
                 expect(mockModel.insertMany).toHaveBeenCalledWith(users);
                 expect(users).toHaveLength(3);
                 users.forEach((user) => {
@@ -778,16 +841,21 @@ describe('Factory class functionality', () => {
                 const mockModel = {
                     create: vi
                         .fn()
-                        .mockImplementation((data) => Promise.resolve(data)),
+                        .mockImplementation(({ data }) =>
+                            Promise.resolve(data),
+                        ),
+                    createMany: vi.fn(),
                 };
 
-                const factory = userFactory.persist({
-                    adapter: 'prisma',
-                    model: mockModel,
+                const adapter = new PrismaAdapter<TestUser>(mockModel);
+                const user = await userFactory.create(undefined, { adapter });
+                expect(mockModel.create).toHaveBeenCalledWith({
+                    data: expect.objectContaining({
+                        email: expect.any(String),
+                        id: expect.any(String),
+                        name: expect.any(String),
+                    }),
                 });
-
-                const user = await factory.create();
-                expect(mockModel.create).toHaveBeenCalledWith({ data: user });
                 expect(user).toEqual(
                     expect.objectContaining({
                         email: expect.any(String),
@@ -799,6 +867,7 @@ describe('Factory class functionality', () => {
 
             it('creates multiple records', async () => {
                 const mockModel = {
+                    create: vi.fn(),
                     createMany: vi
                         .fn()
                         .mockImplementation(({ data }: { data: TestUser[] }) =>
@@ -806,12 +875,10 @@ describe('Factory class functionality', () => {
                         ),
                 };
 
-                const factory = userFactory.persist({
-                    adapter: 'prisma',
-                    model: mockModel,
+                const adapter = new PrismaAdapter<TestUser>(mockModel);
+                const users = await userFactory.createMany(3, undefined, {
+                    adapter,
                 });
-
-                const users = await factory.createMany(3);
                 expect(mockModel.createMany).toHaveBeenCalledWith({
                     data: users,
                 });
@@ -822,6 +889,7 @@ describe('Factory class functionality', () => {
         describe('TypeORMAdapter', () => {
             it('creates a single entity', async () => {
                 const mockRepository = {
+                    create: vi.fn().mockImplementation((data: any) => data),
                     save: vi
                         .fn()
                         .mockImplementation((data: any) =>
@@ -829,12 +897,9 @@ describe('Factory class functionality', () => {
                         ),
                 };
 
-                const factory = userFactory.persist({
-                    adapter: 'typeorm',
-                    model: mockRepository,
-                });
-
-                const user = await factory.create();
+                const adapter = new TypeORMAdapter<TestUser>(mockRepository);
+                const user = await userFactory.create(undefined, { adapter });
+                expect(mockRepository.create).toHaveBeenCalledWith(user);
                 expect(mockRepository.save).toHaveBeenCalledWith(user);
                 expect(user).toEqual(
                     expect.objectContaining({
@@ -847,6 +912,7 @@ describe('Factory class functionality', () => {
 
             it('creates multiple entities', async () => {
                 const mockRepository = {
+                    create: vi.fn().mockImplementation((data: any) => data),
                     save: vi
                         .fn()
                         .mockImplementation((data: any) =>
@@ -854,12 +920,11 @@ describe('Factory class functionality', () => {
                         ),
                 };
 
-                const factory = userFactory.persist({
-                    adapter: 'typeorm',
-                    model: mockRepository,
+                const adapter = new TypeORMAdapter<TestUser>(mockRepository);
+                const users = await userFactory.createMany(3, undefined, {
+                    adapter,
                 });
-
-                const users = await factory.createMany(3);
+                expect(mockRepository.create).toHaveBeenCalledWith(users);
                 expect(mockRepository.save).toHaveBeenCalledWith(users);
                 expect(users).toHaveLength(3);
                 users.forEach((user) => {
@@ -889,13 +954,10 @@ describe('Factory class functionality', () => {
                         ),
                 };
 
-                const factory = userFactory.persist({
-                    adapter: mockAdapter,
-                    model: {}, // Not used for custom adapter
-                });
-
                 // Test single create
-                const user = await factory.create();
+                const user = await userFactory.create(undefined, {
+                    adapter: mockAdapter,
+                });
                 expect(mockAdapter.create).toHaveBeenCalledWith(user);
                 expect(user).toEqual(
                     expect.objectContaining({
@@ -906,7 +968,9 @@ describe('Factory class functionality', () => {
                 );
 
                 // Test batch create
-                const users = await factory.createMany(2);
+                const users = await userFactory.createMany(2, undefined, {
+                    adapter: mockAdapter,
+                });
                 expect(mockAdapter.createMany).toHaveBeenCalledWith(users);
                 expect(users).toHaveLength(2);
             });
@@ -920,298 +984,337 @@ describe('Factory class functionality', () => {
             }));
 
             await expect(factory.create()).rejects.toThrow(
-                'No persistence adapter configured. Call persist() first.',
+                'No persistence adapter configured. Provide an adapter in options or set a default adapter.',
+            );
+        });
+
+        it('uses default adapter when set with withAdapter', async () => {
+            const mockAdapter: PersistenceAdapter<TestUser> = {
+                create: vi
+                    .fn()
+                    .mockImplementation((data: any) => Promise.resolve(data)),
+                createMany: vi
+                    .fn()
+                    .mockImplementation((data: any) => Promise.resolve(data)),
+            };
+
+            const factory = new Factory<TestUser>((faker) => ({
+                email: faker.internet.email(),
+                id: faker.string.uuid(),
+                name: faker.person.fullName(),
+            })).withAdapter(mockAdapter);
+
+            const user = await factory.create();
+            expect(mockAdapter.create).toHaveBeenCalledWith(user);
+
+            const users = await factory.createMany(2);
+            expect(mockAdapter.createMany).toHaveBeenCalledWith(users);
+        });
+
+        it('options adapter overrides default adapter', async () => {
+            const defaultAdapter: PersistenceAdapter<TestUser> = {
+                create: vi.fn(),
+                createMany: vi.fn(),
+            };
+
+            const optionsAdapter: PersistenceAdapter<TestUser> = {
+                create: vi
+                    .fn()
+                    .mockImplementation((data: any) => Promise.resolve(data)),
+                createMany: vi
+                    .fn()
+                    .mockImplementation((data: any) => Promise.resolve(data)),
+            };
+
+            const factory = new Factory<TestUser>((faker) => ({
+                email: faker.internet.email(),
+                id: faker.string.uuid(),
+                name: faker.person.fullName(),
+            })).withAdapter(defaultAdapter);
+
+            await factory.create(undefined, { adapter: optionsAdapter });
+            expect(defaultAdapter.create).not.toHaveBeenCalled();
+            expect(optionsAdapter.create).toHaveBeenCalled();
+        });
+    });
+
+    describe('edge cases and stress tests', () => {
+        it('should handle very large batch sizes efficiently', () => {
+            const factory = new Factory<{ id: number }>((_, i) => ({
+                id: i,
+            }));
+            const startTime = Date.now();
+            const results = factory.batch(10_000);
+            const duration = Date.now() - startTime;
+
+            expect(results).toHaveLength(10_000);
+            expect(results[0].id).toBe(0);
+            expect(results[9999].id).toBe(9999);
+            expect(duration).toBeLessThan(1000);
+        });
+
+        it('should handle deep nesting with maxDepth', () => {
+            interface DeepNested {
+                child?: DeepNested;
+                level: number;
+            }
+
+            const factory = new Factory<DeepNested>(
+                (f, _) => {
+                    const depth = f.options?.maxDepth ?? 5;
+                    const createNested = (level: number): DeepNested => ({
+                        child:
+                            level < depth ? createNested(level + 1) : undefined,
+                        level,
+                    });
+                    return createNested(1);
+                },
+                { maxDepth: 3 },
             );
 
-            describe('edge cases and stress tests', () => {
-                it('should handle very large batch sizes efficiently', () => {
-                    const factory = new Factory<{ id: number }>((_, i) => ({
-                        id: i,
-                    }));
-                    const startTime = Date.now();
-                    const results = factory.batch(10_000);
-                    const duration = Date.now() - startTime;
+            const result = factory.build();
+            let depth = 0;
+            let current: DeepNested | undefined = result;
+            while (current) {
+                depth++;
+                current = current.child;
+            }
+            expect(depth).toBe(3);
+        });
 
-                    expect(results).toHaveLength(10_000);
-                    expect(results[0].id).toBe(0);
-                    expect(results[9999].id).toBe(9999);
-                    expect(duration).toBeLessThan(1000);
-                });
+        it('should handle factories with circular references using Ref', () => {
+            interface Node {
+                children: Node[];
+                id: string;
+                parent?: Node;
+            }
 
-                it('should handle deep nesting with maxDepth', () => {
-                    interface DeepNested {
-                        child?: DeepNested;
-                        level: number;
-                    }
+            const factory = new Factory<Node>((f) => {
+                const node: Node = {
+                    children: [],
+                    id: f.string.uuid(),
+                };
 
-                    const factory = new Factory<DeepNested>(
-                        (f, _) => {
-                            const depth = f.options?.maxDepth ?? 5;
-                            const createNested = (
-                                level: number,
-                            ): DeepNested => ({
-                                child:
-                                    level < depth
-                                        ? createNested(level + 1)
-                                        : undefined,
-                                level,
-                            });
-                            return createNested(1);
-                        },
-                        { maxDepth: 3 },
-                    );
+                if (f.datatype.boolean({ probability: 0.5 })) {
+                    const child = f.build({ parent: node });
+                    node.children.push(child);
+                }
 
-                    const result = factory.build();
-                    let depth = 0;
-                    let current: DeepNested | undefined = result;
-                    while (current) {
-                        depth++;
-                        current = current.child;
-                    }
-                    expect(depth).toBe(3);
-                });
-
-                it('should handle factories with circular references using Ref', () => {
-                    interface Node {
-                        children: Node[];
-                        id: string;
-                        parent?: Node;
-                    }
-
-                    const factory = new Factory<Node>((f) => {
-                        const node: Node = {
-                            children: [],
-                            id: f.string.uuid(),
-                        };
-
-                        if (f.datatype.boolean({ probability: 0.5 })) {
-                            const child = f.build({ parent: node });
-                            node.children.push(child);
-                        }
-
-                        return node;
-                    });
-
-                    const result = factory.build();
-                    expect(result.id).toBeDefined();
-                    if (result.children.length > 0) {
-                        expect(result.children[0].parent).toStrictEqual(result);
-                    }
-                });
-
-                it('should handle empty factory functions gracefully', () => {
-                    const factory = new Factory<Record<string, never>>(
-                        () => ({}),
-                    );
-                    const result = factory.build();
-                    expect(result).toEqual({});
-                });
-
-                it('should handle null and undefined in overrides', () => {
-                    interface Data {
-                        optional?: string;
-                        value: null | string;
-                    }
-
-                    const factory = new Factory<Data>((f) => ({
-                        optional: f.lorem.word(),
-                        value: f.lorem.word(),
-                    }));
-
-                    const withNull = factory.build({ value: null });
-                    expect(withNull.value).toBeNull();
-
-                    const withUndefined = factory.build({
-                        optional: undefined,
-                    });
-                    expect(withUndefined.optional).toBeUndefined();
-                });
-
-                it('should handle factories that throw errors', () => {
-                    const factory = new Factory<{ value: string }>(() => {
-                        throw new Error('Factory error');
-                    });
-
-                    expect(() => factory.build()).toThrow('Factory error');
-                });
-
-                it('should handle async buildAsync with errors', async () => {
-                    const factory = new Factory<{ value: string }>(() => {
-                        throw new Error('Async factory error');
-                    });
-
-                    await expect(factory.buildAsync()).rejects.toThrow(
-                        'Async factory error',
-                    );
-                });
-
-                it('should throw error when calling build() with async factory', () => {
-                    const factory = new Factory<{ value: string }>(async () => {
-                        return { value: 'async result' };
-                    });
-
-                    expect(() => factory.build()).toThrow(
-                        'Async factory function detected',
-                    );
-                });
-
-                it('should handle async factory with buildAsync()', async () => {
-                    const factory = new Factory<{ data: string }>(async (f) => {
-                        await new Promise((resolve) => setTimeout(resolve, 10));
-                        return { data: f.lorem.word() };
-                    });
-
-                    const result = await factory.buildAsync();
-                    expect(result.data).toBeDefined();
-                    expect(typeof result.data).toBe('string');
-                });
-
-                it('should maintain iteration count across multiple calls', () => {
-                    const capturedIterations: number[] = [];
-                    let iteration = 0;
-                    const factory = new Factory<{ iteration: number }>(() => {
-                        capturedIterations.push(iteration);
-                        return { iteration: iteration++ };
-                    });
-
-                    factory.build();
-                    factory.build();
-                    factory.batch(3);
-                    factory.build();
-
-                    expect(capturedIterations).toEqual([0, 1, 2, 3, 4, 5]);
-                });
-
-                it('should handle sample with empty array', () => {
-                    const factory = new Factory<{ value: any }>((f) => ({
-                        value: f.helpers.arrayElement([]),
-                    }));
-
-                    expect(() => factory.build()).toThrow();
-                });
-
-                it('should handle very long strings in overrides', () => {
-                    const longString = 'a'.repeat(10_000);
-                    const factory = new Factory<{ text: string }>((f) => ({
-                        text: f.lorem.word(),
-                    }));
-
-                    const result = factory.build({ text: longString });
-                    expect(result.text).toBe(longString);
-                    expect(result.text.length).toBe(10_000);
-                });
-
-                it('should handle special number values', () => {
-                    const factory = new Factory<{ num: number }>((f) => ({
-                        num: f.number.float(),
-                    }));
-
-                    const withInfinity = factory.build({ num: Infinity });
-                    expect(withInfinity.num).toBe(Infinity);
-
-                    const withNegInfinity = factory.build({ num: -Infinity });
-                    expect(withNegInfinity.num).toBe(-Infinity);
-
-                    const withNaN = factory.build({ num: Number.NaN });
-                    expect(Number.isNaN(withNaN.num)).toBe(true);
-                });
-
-                it('should handle composition with recursive depth limits', () => {
-                    interface Comment {
-                        id: string;
-                        replies: Comment[];
-                        text: string;
-                    }
-
-                    const CommentFactory = new Factory<Comment>((f) => ({
-                        id: f.string.uuid(),
-                        replies: [],
-                        text: f.lorem.sentence(),
-                    }));
-
-                    const ThreadFactory = CommentFactory.extend<Comment>(
-                        (f) => ({
-                            id: f.string.uuid(),
-                            replies: f.datatype.boolean({ probability: 0.7 })
-                                ? CommentFactory.batch(
-                                      f.number.int({ max: 3, min: 1 }),
-                                  )
-                                : [],
-                            text: f.lorem.sentence(),
-                        }),
-                    );
-
-                    const result = ThreadFactory.build();
-                    expect(result.id).toBeDefined();
-                    expect(result.text).toBeDefined();
-                    expect(Array.isArray(result.replies)).toBe(true);
-                });
-
-                it('should handle symbol keys in objects', () => {
-                    const sym = Symbol('test');
-                    const factory = new Factory<Record<symbol, string>>((f) => {
-                        return {
-                            [sym]: f.lorem.word(),
-                        };
-                    });
-
-                    const result = factory.build();
-                    expect(result[sym]).toBeDefined();
-                    expect(typeof result[sym]).toBe('string');
-                });
-
-                it('should handle Date objects in overrides', () => {
-                    const factory = new Factory<{ date: Date }>((f) => ({
-                        date: f.date.recent(),
-                    }));
-
-                    const customDate = new Date('2024-01-01');
-                    const result = factory.build({ date: customDate });
-                    expect(result.date).toBe(customDate);
-                    expect(result.date.getTime()).toBe(customDate.getTime());
-                });
-
-                it('should handle factories with empty object return', () => {
-                    const factory = new Factory<Record<string, any>>(() => {
-                        return {};
-                    });
-
-                    const result = factory.build();
-                    expect(result).toEqual({});
-                });
-
-                it('should handle batch with override object', () => {
-                    const factory = new Factory<{
-                        index: number;
-                        value: string;
-                    }>((f, i) => ({
-                        index: i,
-                        value: f.lorem.word(),
-                    }));
-
-                    const results = factory.batch(5, { value: 'overridden' });
-
-                    results.forEach((result, i) => {
-                        expect(result.index).toBe(i);
-                        expect(result.value).toBe('overridden');
-                    });
-                });
-
-                it('should generate different values across instances', () => {
-                    const factory = new Factory<{ value: number }>((f) => ({
-                        value: f.number.int({ max: 1000, min: 0 }),
-                    }));
-
-                    const values = new Set<number>();
-                    // Generate multiple values and expect some variance
-                    for (let i = 0; i < 10; i++) {
-                        values.add(factory.build().value);
-                    }
-
-                    // With a range of 1000, we should see more than 1 unique value in 10 tries
-                    expect(values.size).toBeGreaterThan(1);
-                });
+                return node;
             });
+
+            const result = factory.build();
+            expect(result.id).toBeDefined();
+            if (result.children.length > 0) {
+                expect(result.children[0].parent).toStrictEqual(result);
+            }
+        });
+
+        it('should handle empty factory functions gracefully', () => {
+            const factory = new Factory<Record<string, never>>(() => ({}));
+            const result = factory.build();
+            expect(result).toEqual({});
+        });
+
+        it('should handle null and undefined in overrides', () => {
+            interface Data {
+                optional?: string;
+                value: null | string;
+            }
+
+            const factory = new Factory<Data>((f) => ({
+                optional: f.lorem.word(),
+                value: f.lorem.word(),
+            }));
+
+            const withNull = factory.build({ value: null });
+            expect(withNull.value).toBeNull();
+
+            const withUndefined = factory.build({
+                optional: undefined,
+            });
+            expect(withUndefined.optional).toBeUndefined();
+        });
+
+        it('should handle factories that throw errors', () => {
+            const factory = new Factory<{ value: string }>(() => {
+                throw new Error('Factory error');
+            });
+
+            expect(() => factory.build()).toThrow('Factory error');
+        });
+
+        it('should handle async buildAsync with errors', async () => {
+            const factory = new Factory<{ value: string }>(() => {
+                throw new Error('Async factory error');
+            });
+
+            await expect(factory.buildAsync()).rejects.toThrow(
+                'Async factory error',
+            );
+        });
+
+        it('should throw error when calling build() with async factory', () => {
+            const factory = new Factory<{ value: string }>(async () => {
+                return { value: 'async result' };
+            });
+
+            expect(() => factory.build()).toThrow(
+                'Async factory function detected',
+            );
+        });
+
+        it('should handle async factory with buildAsync()', async () => {
+            const factory = new Factory<{ data: string }>(async (f) => {
+                await new Promise((resolve) => setTimeout(resolve, 10));
+                return { data: f.lorem.word() };
+            });
+
+            const result = await factory.buildAsync();
+            expect(result.data).toBeDefined();
+            expect(typeof result.data).toBe('string');
+        });
+
+        it('should maintain iteration count across multiple calls', () => {
+            const capturedIterations: number[] = [];
+            let iteration = 0;
+            const factory = new Factory<{ iteration: number }>(() => {
+                capturedIterations.push(iteration);
+                return { iteration: iteration++ };
+            });
+
+            factory.build();
+            factory.build();
+            factory.batch(3);
+            factory.build();
+
+            expect(capturedIterations).toEqual([0, 1, 2, 3, 4, 5]);
+        });
+
+        it('should handle sample with empty array', () => {
+            const factory = new Factory<{ value: any }>((f) => ({
+                value: f.helpers.arrayElement([]),
+            }));
+
+            expect(() => factory.build()).toThrow();
+        });
+
+        it('should handle very long strings in overrides', () => {
+            const longString = 'a'.repeat(10_000);
+            const factory = new Factory<{ text: string }>((f) => ({
+                text: f.lorem.word(),
+            }));
+
+            const result = factory.build({ text: longString });
+            expect(result.text).toBe(longString);
+            expect(result.text.length).toBe(10_000);
+        });
+
+        it('should handle special number values', () => {
+            const factory = new Factory<{ num: number }>((f) => ({
+                num: f.number.float(),
+            }));
+
+            const withInfinity = factory.build({ num: Infinity });
+            expect(withInfinity.num).toBe(Infinity);
+
+            const withNegInfinity = factory.build({ num: -Infinity });
+            expect(withNegInfinity.num).toBe(-Infinity);
+
+            const withNaN = factory.build({ num: Number.NaN });
+            expect(Number.isNaN(withNaN.num)).toBe(true);
+        });
+
+        it('should handle composition with recursive depth limits', () => {
+            interface Comment {
+                id: string;
+                replies: Comment[];
+                text: string;
+            }
+
+            const CommentFactory = new Factory<Comment>((f) => ({
+                id: f.string.uuid(),
+                replies: [],
+                text: f.lorem.sentence(),
+            }));
+
+            const ThreadFactory = CommentFactory.extend<Comment>((f) => ({
+                id: f.string.uuid(),
+                replies: f.datatype.boolean({ probability: 0.7 })
+                    ? CommentFactory.batch(f.number.int({ max: 3, min: 1 }))
+                    : [],
+                text: f.lorem.sentence(),
+            }));
+
+            const result = ThreadFactory.build();
+            expect(result.id).toBeDefined();
+            expect(result.text).toBeDefined();
+            expect(Array.isArray(result.replies)).toBe(true);
+        });
+
+        it('should handle symbol keys in objects', () => {
+            const sym = Symbol('test');
+            const factory = new Factory<Record<symbol, string>>((f) => {
+                return {
+                    [sym]: f.lorem.word(),
+                };
+            });
+
+            const result = factory.build();
+            expect(result[sym]).toBeDefined();
+            expect(typeof result[sym]).toBe('string');
+        });
+
+        it('should handle Date objects in overrides', () => {
+            const factory = new Factory<{ date: Date }>((f) => ({
+                date: f.date.recent(),
+            }));
+
+            const customDate = new Date('2024-01-01');
+            const result = factory.build({ date: customDate });
+            expect(result.date).toBe(customDate);
+            expect(result.date.getTime()).toBe(customDate.getTime());
+        });
+
+        it('should handle factories with empty object return', () => {
+            const factory = new Factory<Record<string, any>>(() => {
+                return {};
+            });
+
+            const result = factory.build();
+            expect(result).toEqual({});
+        });
+
+        it('should handle batch with override object', () => {
+            const factory = new Factory<{
+                index: number;
+                value: string;
+            }>((f, i) => ({
+                index: i,
+                value: f.lorem.word(),
+            }));
+
+            const results = factory.batch(5, { value: 'overridden' });
+
+            results.forEach((result, i) => {
+                expect(result.index).toBe(i);
+                expect(result.value).toBe('overridden');
+            });
+        });
+
+        it('should generate different values across instances', () => {
+            const factory = new Factory<{ value: number }>((f) => ({
+                value: f.number.int({ max: 1000, min: 0 }),
+            }));
+
+            const values = new Set<number>();
+            // Generate multiple values and expect some variance
+            for (let i = 0; i < 10; i++) {
+                values.add(factory.build().value);
+            }
+
+            // With a range of 1000, we should see more than 1 unique value in 10 tries
+            expect(values.size).toBeGreaterThan(1);
         });
     });
 });

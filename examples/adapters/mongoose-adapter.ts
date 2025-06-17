@@ -1,57 +1,51 @@
-import { PersistenceAdapter } from '../../src/persistence-adapter';
+// Mongoose persistence adapter example
 
-/**
- * A persistence adapter for Mongoose, allowing `Factory` to save generated
- * objects to a MongoDB database via a Mongoose Model.
- *
- * @template T The type of the Mongoose document.
- */
-export class MongooseAdapter<T> implements PersistenceAdapter<T> {
-    /**
-     * @param model The Mongoose Model (e.g., `UserModel`).
-     * Using `unknown` here as Mongoose Model types can be complex and
-     * depend on your schema definition. For stricter typing, you
-     * might define a `MongooseModel<T>` interface.
-     */
-    constructor(private readonly model: unknown) {
-        this.model = model;
-    }
+import { PersistenceAdapter } from '../interface-forge/types';
 
-    /**
-     * Persists a single Mongoose document.
-     *
-     * @param data The object to be persisted.
-     * @returns A Promise that resolves with the saved Mongoose document.
-     */
+interface MongooseModel<T> {
+    create(data: T): Promise<T>;
+    insertMany(data: T[]): Promise<T[]>;
+}
+
+export class MongooseAdapter<T> implements PersistenceAdapter<T, T> {
+    constructor(private readonly model: MongooseModel<T>) {}
+
     async create(data: T): Promise<T> {
-        if (
-            this.model &&
-            typeof this.model === 'object' &&
-            'create' in this.model
-        ) {
-            const createMethod = this.model.create as (data: T) => Promise<T>;
-            return await createMethod(data);
-        }
-        throw new Error('Invalid model: create method not available');
+        return await this.model.create(data);
     }
 
-    /**
-     * Persists multiple Mongoose documents in a batch.
-     *
-     * @param data An array of objects to be persisted.
-     * @returns A Promise that resolves with an array of the saved Mongoose documents.
-     */
     async createMany(data: T[]): Promise<T[]> {
-        if (
-            this.model &&
-            typeof this.model === 'object' &&
-            'insertMany' in this.model
-        ) {
-            const insertManyMethod = this.model.insertMany as (
-                data: T[],
-            ) => Promise<T[]>;
-            return await insertManyMethod(data);
-        }
-        throw new Error('Invalid model: insertMany method not available');
+        return await this.model.insertMany(data);
     }
 }
+
+/*
+Usage:
+
+import { model, Schema } from 'mongoose';
+
+const UserSchema = new Schema({
+    email: { type: String, required: true },
+    name: { type: String, required: true },
+});
+
+const UserModel = model('User', UserSchema);
+
+const userFactory = new Factory<User>((faker) => ({
+    email: faker.internet.email(),
+    name: faker.person.fullName(),
+}));
+
+// Option 1: Set default adapter
+const factoryWithAdapter = userFactory.withAdapter(new MongooseAdapter(UserModel));
+const user = await factoryWithAdapter.create();
+const users = await factoryWithAdapter.createMany(5);
+
+// Option 2: Pass adapter in options
+const user2 = await userFactory.create(undefined, { 
+    adapter: new MongooseAdapter(UserModel) 
+});
+const users2 = await userFactory.createMany(5, undefined, { 
+    adapter: new MongooseAdapter(UserModel) 
+});
+*/

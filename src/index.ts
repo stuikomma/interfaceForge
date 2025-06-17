@@ -11,17 +11,27 @@ import { ConfigurationError } from './errors';
 import { CycleGenerator, SampleGenerator } from './generators';
 import { merge, Ref, validateBatchSize } from './utils';
 import { DEFAULT_MAX_DEPTH } from './constants';
-import { PersistenceAdapter } from './persistence-adapter';
+import {
+    AfterBuildHook,
+    BeforeBuildHook,
+    CreateManyOptions,
+    CreateOptions,
+    PersistenceAdapter,
+} from './types';
 
-export * from '../examples/adapters/mongoose-adapter';
-export * from '../examples/adapters/prisma-adapter';
-export * from '../examples/adapters/typeorm-adapter';
 export {
     CircularReferenceError,
     ConfigurationError,
     ValidationError,
 } from './errors';
-export { PersistenceAdapter } from './persistence-adapter';
+export {
+    AfterBuildHook,
+    BeforeBuildHook,
+    CreateManyOptions,
+    CreateOptions,
+    PartialFactoryFunction,
+    PersistenceAdapter,
+} from './types';
 export { Ref } from './utils';
 
 export type FactoryComposition<T> = {
@@ -46,69 +56,6 @@ export type FactorySchema<T> = {
         | T[K];
 };
 
-type AfterBuildHook<T> = (obj: T) => Promise<T> | T;
-
-type BeforeBuildHook<T> = (
-    params: Partial<T>,
-) => Partial<T> | Promise<Partial<T>>;
-
-interface PersistenceOptions<T> {
-    adapter: 'mongoose' | 'prisma' | 'typeorm' | PersistenceAdapter<T>;
-    model: Record<string, unknown>;
-    transaction?: Record<string, unknown>;
-}
-
-// Import the adapter classes
-class MongooseAdapter<T> implements PersistenceAdapter<T> {
-    constructor(private readonly model: Record<string, unknown>) {}
-
-    async create(data: T): Promise<T> {
-        const createFn = this.model.create as (data: T) => Promise<T>;
-        return await createFn(data);
-    }
-
-    async createMany(data: T[]): Promise<T[]> {
-        const insertManyFn = this.model.insertMany as (
-            data: T[],
-        ) => Promise<T[]>;
-        return await insertManyFn(data);
-    }
-}
-
-class PrismaAdapter<T> implements PersistenceAdapter<T> {
-    constructor(private readonly model: Record<string, unknown>) {}
-
-    async create(data: T): Promise<T> {
-        const createFn = this.model.create as (options: {
-            data: T;
-        }) => Promise<unknown>;
-        await createFn({ data });
-        return data;
-    }
-
-    async createMany(data: T[]): Promise<T[]> {
-        const createManyFn = this.model.createMany as (options: {
-            data: T[];
-        }) => Promise<void>;
-        await createManyFn({ data });
-        return data;
-    }
-}
-
-class TypeORMAdapter<T> implements PersistenceAdapter<T> {
-    constructor(private readonly repository: Record<string, unknown>) {}
-
-    async create(data: T): Promise<T> {
-        const saveFn = this.repository.save as (data: T) => Promise<T>;
-        return await saveFn(data);
-    }
-
-    async createMany(data: T[]): Promise<T[]> {
-        const saveFn = this.repository.save as (data: T[]) => Promise<T[]>;
-        return await saveFn(data);
-    }
-}
-
 /**
  * A factory class for generating type-safe mock data by extending Faker.js functionality.
  * Provides methods for creating single instances, batches, and complex object compositions
@@ -128,7 +75,7 @@ export class Factory<
     protected afterBuildHooks: AfterBuildHook<T>[] = [];
     protected beforeBuildHooks: BeforeBuildHook<T>[] = [];
     protected readonly factory: FactoryFunction<T>;
-    private persistenceAdapter?: PersistenceAdapter<T>;
+    private defaultAdapter?: PersistenceAdapter<T>;
 
     constructor(
         factory: FactoryFunction<T>,
@@ -213,6 +160,33 @@ export class Factory<
 
         return results;
     };
+
+    /**
+     * Creates multiple instances asynchronously, allowing use of async factory functions.
+     * This method supports both synchronous and asynchronous factory functions and hooks.
+     *
+     * @param size Number of instances to generate (must be non-negative integer)
+     * @param kwargs Either a single partial object (applied to all) or an array of partials (one per instance)
+     * @returns Promise that resolves to an array of generated instances
+     * @throws {Error} If size is negative or not an integer
+     *
+     * @example
+     * ```typescript
+     * const UserFactory = new Factory<User>(async (factory) => ({
+     *   id: factory.string.uuid(),
+     *   email: factory.internet.email(),
+     *   apiKey: await generateApiKey() // async operation
+     * }));
+     *
+     * const users = await UserFactory.batchAsync(5);
+     * ```
+     */
+    async batchAsync(
+        size: number,
+        kwargs?: Partial<T> | Partial<T>[],
+    ): Promise<T[]> {
+        return this.#batchAsync(this, size, kwargs, 0);
+    }
 
     /**
      * Adds a hook that will be executed before building the instance.
@@ -340,18 +314,37 @@ export class Factory<
      * Uses the configured persistence adapter if available.
      *
      * @param kwargs Optional properties to override in the generated instance
+     * @param options Options including an optional persistence adapter
      * @returns Promise that resolves with the persisted instance
-     * @throws {Error} If no persistence adapter is configured
+     * @throws {ConfigurationError} If no persistence adapter is configured
+     *
+     * @example
+     * ```typescript
+     * // With default adapter
+     * const userFactory = new Factory<User>((faker) => ({
+     *   email: faker.internet.email(),
+     *   name: faker.person.fullName()
+     * })).withAdapter(mongooseAdapter);
+     *
+     * const user = await userFactory.create({ name: 'John' });
+     *
+     * // With adapter in options
+     * const user2 = await userFactory.create(
+     *   { name: 'Jane' },
+     *   { adapter: prismaAdapter }
+     * );
+     * ```
      */
-    async create(kwargs?: Partial<T>): Promise<T> {
-        if (!this.persistenceAdapter) {
-            throw new Error(
-                'No persistence adapter configured. Call persist() first.',
+    async create(kwargs?: Partial<T>, options?: CreateOptions<T>): Promise<T> {
+        const adapter = options?.adapter ?? this.defaultAdapter;
+        if (!adapter) {
+            throw new ConfigurationError(
+                'No persistence adapter configured. Provide an adapter in options or set a default adapter.',
             );
         }
 
         const instance = await this.buildAsync(kwargs);
-        return this.persistenceAdapter.create(instance);
+        return adapter.create(instance);
     }
 
     /**
@@ -360,23 +353,46 @@ export class Factory<
      *
      * @param size Number of instances to create and persist
      * @param kwargs Optional overrides for the instances
+     * @param options Options including an optional persistence adapter
      * @returns Promise that resolves with the persisted instances
-     * @throws {Error} If no persistence adapter is configured
+     * @throws {ConfigurationError} If no persistence adapter is configured
+     *
+     * @example
+     * ```typescript
+     * // Create 5 users with default adapter
+     * const users = await userFactory.createMany(5);
+     *
+     * // With individual overrides
+     * const users2 = await userFactory.createMany(3, [
+     *   { role: 'admin' },
+     *   { role: 'user' },
+     *   { role: 'guest' }
+     * ]);
+     *
+     * // With adapter in options
+     * const users3 = await userFactory.createMany(
+     *   10,
+     *   undefined,
+     *   { adapter: typeormAdapter }
+     * );
+     * ```
      */
     async createMany(
         size: number,
         kwargs?: Partial<T> | Partial<T>[],
+        options?: CreateManyOptions<T>,
     ): Promise<T[]> {
-        if (!this.persistenceAdapter) {
-            throw new Error(
-                'No persistence adapter configured. Call persist() first.',
+        const adapter = options?.adapter ?? this.defaultAdapter;
+        if (!adapter) {
+            throw new ConfigurationError(
+                'No persistence adapter configured. Provide an adapter in options or set a default adapter.',
             );
         }
 
         const instances = await (isAsyncFunction(this.factory)
             ? this.#batchAsync(this, size, kwargs, 0)
             : this.#batch(this, size, kwargs, 0));
-        return this.persistenceAdapter.createMany(instances);
+        return adapter.createMany(instances);
     }
 
     /**
@@ -428,44 +444,6 @@ export class Factory<
     }
 
     /**
-     * Configures persistence for this factory instance.
-     *
-     * @param options Persistence configuration options
-     * @returns The current Factory instance for method chaining
-     */
-    persist(options: PersistenceOptions<T>): this {
-        if (typeof options.adapter === 'string') {
-            switch (options.adapter) {
-                case 'mongoose': {
-                    this.persistenceAdapter = new MongooseAdapter<T>(
-                        options.model,
-                    );
-                    break;
-                }
-                case 'prisma': {
-                    this.persistenceAdapter = new PrismaAdapter<T>(
-                        options.model,
-                    );
-                    break;
-                }
-                case 'typeorm': {
-                    this.persistenceAdapter = new TypeORMAdapter<T>(
-                        options.model,
-                    );
-                    break;
-                }
-                default: {
-                    throw new Error(`Unsupported adapter: ${options.adapter}`);
-                }
-            }
-        } else {
-            this.persistenceAdapter = options.adapter;
-        }
-
-        return this;
-    }
-
-    /**
      * Creates a generator that yields random values from an iterable without consecutive duplicates.
      * Each value is randomly selected with replacement, but the generator ensures the same value
      * is never returned twice in a row (unless the iterable contains only one element).
@@ -492,6 +470,37 @@ export class Factory<
      */
     use<R, A extends unknown[]>(handler: (...args: A) => R, ...args: A): R {
         return new Ref({ args, handler }) as R;
+    }
+
+    /**
+     * Sets the default persistence adapter for this factory instance.
+     *
+     * @param adapter The persistence adapter to use as default
+     * @returns The current Factory instance for method chaining
+     *
+     * @example
+     * ```typescript
+     * import { MongooseAdapter } from './adapters/mongoose-adapter';
+     *
+     * const userFactory = new Factory<User>((faker) => ({
+     *   id: faker.string.uuid(),
+     *   email: faker.internet.email(),
+     *   name: faker.person.fullName()
+     * }));
+     *
+     * // Set default adapter
+     * const factoryWithDb = userFactory.withAdapter(
+     *   new MongooseAdapter(UserModel)
+     * );
+     *
+     * // Now all create/createMany calls will use this adapter
+     * const user = await factoryWithDb.create();
+     * const users = await factoryWithDb.createMany(5);
+     * ```
+     */
+    withAdapter(adapter: PersistenceAdapter<T>): this {
+        this.defaultAdapter = adapter;
+        return this;
     }
 
     /**

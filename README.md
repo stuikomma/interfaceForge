@@ -248,6 +248,38 @@ const variedUsers = UserFactory.batch(3, [
 // ]
 ```
 
+#### `batchAsync`
+
+Creates multiple instances asynchronously, allowing use of async factory functions. This method supports both synchronous and asynchronous factory functions and hooks.
+
+**Signature:**
+
+```typescript
+batchAsync(size: number, kwargs?: Partial<T> | Partial<T>[]): Promise<T[]>
+```
+
+**Usage:**
+
+```typescript
+const UserFactory = new Factory<User>(async (factory) => ({
+    id: factory.string.uuid(),
+    email: factory.internet.email(),
+    apiKey: await generateApiKey(), // async operation
+}));
+
+// Create 5 users asynchronously
+const users = await UserFactory.batchAsync(5);
+
+// With overrides
+const admins = await UserFactory.batchAsync(3, { role: 'admin' });
+
+// With individual overrides
+const customUsers = await UserFactory.batchAsync(2, [
+    { email: 'first@example.com' },
+    { email: 'second@example.com' },
+]);
+```
+
 #### `use`
 
 Creates a reference to a function that can be used within the factory. This method allows for the encapsulation of a function and its arguments, enabling deferred execution.
@@ -518,6 +550,130 @@ const user = await UserFactory.buildAsync();
 - Use `buildAsync()` when you have async hooks or want consistent async behavior
 - Hooks are executed in the order they were registered
 - Multiple hooks of the same type can be chained
+
+#### `create`
+
+Creates and persists a single instance to a database using a persistence adapter.
+
+**Signature:**
+
+```typescript
+create(kwargs?: Partial<T>, options?: CreateOptions<T>): Promise<T>
+```
+
+**Usage:**
+
+```typescript
+import { MongooseAdapter } from 'interface-forge/examples/adapters/mongoose-adapter';
+
+const UserFactory = new Factory<User>((factory) => ({
+    id: factory.string.uuid(),
+    email: factory.internet.email(),
+    name: factory.person.fullName(),
+}));
+
+// Option 1: Set default adapter
+const factoryWithDb = UserFactory.withAdapter(new MongooseAdapter(UserModel));
+const user = await factoryWithDb.create({ name: 'John' });
+
+// Option 2: Pass adapter in options
+const user2 = await UserFactory.create(
+    { name: 'Jane' },
+    { adapter: new MongooseAdapter(UserModel) },
+);
+```
+
+#### `createMany`
+
+Creates and persists multiple instances to a database in a batch operation.
+
+**Signature:**
+
+```typescript
+createMany(
+    size: number,
+    kwargs?: Partial<T> | Partial<T>[],
+    options?: CreateManyOptions<T>
+): Promise<T[]>
+```
+
+**Usage:**
+
+```typescript
+// Create 5 users with default adapter
+const users = await factoryWithDb.createMany(5);
+
+// With individual overrides
+const users2 = await factoryWithDb.createMany(3, [
+    { role: 'admin' },
+    { role: 'user' },
+    { role: 'guest' },
+]);
+
+// With adapter in options
+const users3 = await UserFactory.createMany(10, undefined, {
+    adapter: prismaAdapter,
+});
+```
+
+#### `withAdapter`
+
+Sets the default persistence adapter for the factory instance.
+
+**Signature:**
+
+```typescript
+withAdapter(adapter: PersistenceAdapter<T>): this
+```
+
+**Usage:**
+
+```typescript
+import { PrismaAdapter } from 'interface-forge/examples/adapters/prisma-adapter';
+import { TypeORMAdapter } from 'interface-forge/examples/adapters/typeorm-adapter';
+
+// Set default adapter for all operations
+const userFactory = new Factory<User>(/* ... */).withAdapter(
+    new PrismaAdapter(prisma.user),
+);
+
+// Now all create/createMany calls will use this adapter
+const user = await userFactory.create();
+const users = await userFactory.createMany(5);
+```
+
+### Persistence Adapters
+
+Interface-forge supports database persistence through adapters. Example adapters are provided for popular ORMs:
+
+- **Mongoose** (MongoDB)
+- **Prisma**
+- **TypeORM**
+
+To implement a custom adapter, implement the `PersistenceAdapter` interface:
+
+```typescript
+interface PersistenceAdapter<T, R = T> {
+    create(data: T): Promise<R>;
+    createMany(data: T[]): Promise<R[]>;
+}
+```
+
+Example custom adapter:
+
+```typescript
+class CustomAdapter<T> implements PersistenceAdapter<T> {
+    async create(data: T): Promise<T> {
+        // Your persistence logic
+        return savedData;
+    }
+
+    async createMany(data: T[]): Promise<T[]> {
+        // Your batch persistence logic
+        return savedDataArray;
+    }
+}
+```
 
 ### Additional Methods
 

@@ -5,7 +5,7 @@
  * inheritance hierarchies and specialized factories from base factories.
  */
 
-import { Factory } from '../src/index';
+import { Factory } from 'interface-forge/index';
 
 interface AdminUser extends User {
     department: string;
