@@ -326,7 +326,7 @@ export class Factory<
             isAsyncFunction(this.factory)
                 ? async (factory, iteration) => {
                       const baseValues = (await this.factory(
-                          factory as unknown as Factory<T, O, F>,
+                          factory as unknown as Factory<T>,
                           iteration,
                       )) as unknown as FactorySchema<U>;
                       const composedValues = Object.fromEntries(
@@ -347,7 +347,7 @@ export class Factory<
                   }
                 : (factory, iteration) => {
                       const baseValues = this.factory(
-                          factory as unknown as Factory<T, O, F>,
+                          factory as unknown as Factory<T>,
                           iteration,
                       ) as unknown as FactorySchema<U>;
                       const composedValues = Object.fromEntries(
@@ -471,7 +471,7 @@ export class Factory<
         return new Factory<U>(
             (factory, iteration) => {
                 const baseValues = this.factory(
-                    factory as unknown as Factory<T, O, F>,
+                    factory as unknown as Factory<T>,
                     iteration,
                 ) as unknown as FactorySchema<U>;
                 const extendedValues = factoryFn(factory, iteration);
@@ -520,7 +520,7 @@ export class Factory<
         return new Factory<Partial<T>>(
             (factory, iteration) => {
                 const fullValues = this.factory(
-                    factory as unknown as Factory<T, O, F>,
+                    factory as unknown as Factory<T>,
                     iteration,
                 );
                 if (fullValues instanceof Promise) {
