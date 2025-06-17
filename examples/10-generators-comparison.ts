@@ -5,7 +5,7 @@
  * methods, showing when to use each one and their practical applications.
  */
 
-import { Factory } from 'interface-forge/index';
+import { Factory } from 'interface-forge';
 
 interface Product {
     category: string;

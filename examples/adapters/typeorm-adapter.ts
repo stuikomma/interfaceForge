@@ -1,6 +1,6 @@
 // TypeORM persistence adapter example
 
-import { PersistenceAdapter } from '../interface-forge/types';
+import { PersistenceAdapter } from 'interface-forge';
 
 interface TypeORMRepository<T> {
     create(data: T): T;

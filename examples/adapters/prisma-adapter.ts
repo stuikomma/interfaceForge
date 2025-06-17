@@ -1,6 +1,6 @@
 // Prisma persistence adapter example
 
-import { PersistenceAdapter } from '../interface-forge/types';
+import { PersistenceAdapter } from 'interface-forge';
 
 interface PrismaModelDelegate<T> {
     create(args: { data: T }): Promise<T>;

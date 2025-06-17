@@ -68,6 +68,9 @@ importers:
             eslint-plugin-vitest:
                 specifier: ^0.5.4
                 version: 0.5.4(@typescript-eslint/eslint-plugin@8.34.1(@typescript-eslint/parser@8.34.1(eslint@9.29.0(jiti@2.4.2))(typescript@5.8.3))(eslint@9.29.0(jiti@2.4.2))(typescript@5.8.3))(eslint@9.29.0(jiti@2.4.2))(typescript@5.8.3)(vitest@3.2.3(@types/debug@4.1.12)(@types/node@24.0.3)(jiti@2.4.2)(yaml@2.8.0))
+            expect-type:
+                specifier: ^1.2.1
+                version: 1.2.1
             globals:
                 specifier: ^16.2.0
                 version: 16.2.0

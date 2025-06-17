@@ -1,6 +1,6 @@
 // Mongoose persistence adapter example
 
-import { PersistenceAdapter } from '../interface-forge/types';
+import { PersistenceAdapter } from 'interface-forge';
 
 interface MongooseModel<T> {
     create(data: T): Promise<T>;
