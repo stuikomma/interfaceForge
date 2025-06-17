@@ -41,6 +41,7 @@ export type FactoryFunction<T> = (
     factory: Factory<T>,
     iteration: number,
 ) => FactorySchema<T> | Promise<FactorySchema<T>>;
+
 export interface FactoryOptions {
     locale?: LocaleDefinition | LocaleDefinition[];
     maxDepth?: number;
@@ -95,6 +96,9 @@ export interface PersistenceAdapter<T, R = T> {
 export class Factory<
     T,
     O extends FactoryOptions = FactoryOptions,
+    F extends
+        | FactoryFunction<T>
+        | PartialFactoryFunction<T> = FactoryFunction<T>,
 > extends Faker {
     readonly options?: { maxDepth: number } & Omit<
         O,
@@ -102,11 +106,11 @@ export class Factory<
     >;
     protected afterBuildHooks: AfterBuildHook<T>[] = [];
     protected beforeBuildHooks: BeforeBuildHook<T>[] = [];
-    protected readonly factory: FactoryFunction<T>;
+    protected readonly factory: F;
     private defaultAdapter?: PersistenceAdapter<T>;
 
     constructor(
-        factory: FactoryFunction<T>,
+        factory: F,
         { locale = en, randomizer, ...rest }: Partial<O> = {},
     ) {
         super({
@@ -212,8 +216,8 @@ export class Factory<
     async batchAsync(
         size: number,
         kwargs?: Partial<T> | Partial<T>[],
-    ): Promise<T[]> {
-        return this.#batchAsync(this, size, kwargs, 0);
+    ): Promise<F extends FactoryFunction<T> ? T[] : Partial<T>[]> {
+        return this.#batchAsync(size, kwargs, 0);
     }
 
     /**
@@ -242,7 +246,9 @@ export class Factory<
      * @returns A new instance with factory-generated values merged with any overrides
      * @throws {ConfigurationError} If async hooks are registered
      */
-    build = (kwargs?: Partial<T>): T => {
+    build = (
+        kwargs?: Partial<T>,
+    ): F extends FactoryFunction<T> ? T : Partial<T> => {
         if (isAsyncFunction(this.factory)) {
             throw new ConfigurationError(
                 'Async factory function detected. Use buildAsync() method to build instances with async factories.',
@@ -289,7 +295,9 @@ export class Factory<
      * @returns A promise that resolves to the built and processed instance
      * @throws {Error} If any hook throws an error during execution
      */
-    async buildAsync(kwargs?: Partial<T>): Promise<T> {
+    async buildAsync(
+        kwargs?: Partial<T>,
+    ): Promise<F extends FactoryFunction<T> ? T : Partial<T>> {
         let params = kwargs ?? {};
 
         for (const hook of this.beforeBuildHooks) {
@@ -315,25 +323,53 @@ export class Factory<
      */
     compose<U extends T>(composition: FactoryComposition<U>): Factory<U> {
         return new Factory<U>(
-            (_factory, iteration) => {
-                const baseValues = this.factory(
-                    this,
-                    iteration,
-                ) as FactorySchema<U>;
-                const composedValues = Object.fromEntries(
-                    Object.entries(composition).map(
-                        ([key, value]) =>
-                            [
-                                key,
-                                value instanceof Factory
-                                    ? value.build()
-                                    : value,
-                            ] as [string, unknown],
-                    ),
-                );
-                return { ...baseValues, ...composedValues } as FactorySchema<U>;
-            },
-            { maxDepth: this.options?.maxDepth ?? DEFAULT_MAX_DEPTH },
+            isAsyncFunction(this.factory)
+                ? async (factory, iteration) => {
+                      const baseValues = (await this.factory(
+                          factory as unknown as Factory<T, O, F>,
+                          iteration,
+                      )) as unknown as FactorySchema<U>;
+                      const composedValues = Object.fromEntries(
+                          Object.entries(composition).map(
+                              ([key, value]) =>
+                                  [
+                                      key,
+                                      value instanceof Factory
+                                          ? value.build()
+                                          : value,
+                                  ] as [string, unknown],
+                          ),
+                      );
+                      return {
+                          ...baseValues,
+                          ...composedValues,
+                      } as FactorySchema<U>;
+                  }
+                : (factory, iteration) => {
+                      const baseValues = this.factory(
+                          factory as unknown as Factory<T, O, F>,
+                          iteration,
+                      ) as unknown as FactorySchema<U>;
+                      const composedValues = Object.fromEntries(
+                          Object.entries(composition).map(
+                              ([key, value]) =>
+                                  [
+                                      key,
+                                      value instanceof Factory
+                                          ? value.build()
+                                          : value,
+                                  ] as [string, unknown],
+                          ),
+                      );
+                      return {
+                          ...baseValues,
+                          ...composedValues,
+                      } as FactorySchema<U>;
+                  },
+            {
+                maxDepth: this.options?.maxDepth ?? DEFAULT_MAX_DEPTH,
+                ...this.options,
+            } as Partial<O>,
         );
     }
 
@@ -372,7 +408,7 @@ export class Factory<
         }
 
         const instance = await this.buildAsync(kwargs);
-        return adapter.create(instance);
+        return adapter.create(instance as T);
     }
 
     /**
@@ -418,9 +454,9 @@ export class Factory<
         }
 
         const instances = await (isAsyncFunction(this.factory)
-            ? this.#batchAsync(this, size, kwargs, 0)
-            : this.#batch(this, size, kwargs, 0));
-        return adapter.createMany(instances);
+            ? this.#batchAsync(size, kwargs, 0)
+            : this.#batch(this as unknown as Factory<T>, size, kwargs, 0));
+        return adapter.createMany(instances as T[]);
     }
 
     /**
@@ -435,9 +471,9 @@ export class Factory<
         return new Factory<U>(
             (factory, iteration) => {
                 const baseValues = this.factory(
-                    this,
+                    factory as unknown as Factory<T, O, F>,
                     iteration,
-                ) as FactorySchema<U>;
+                ) as unknown as FactorySchema<U>;
                 const extendedValues = factoryFn(factory, iteration);
                 if (
                     extendedValues instanceof Promise ||
@@ -452,7 +488,10 @@ export class Factory<
                 }
                 return { ...baseValues, ...extendedValues };
             },
-            { maxDepth: this.options?.maxDepth ?? DEFAULT_MAX_DEPTH },
+            {
+                maxDepth: this.options?.maxDepth ?? DEFAULT_MAX_DEPTH,
+                ...this.options,
+            } as Partial<O>,
         );
     }
 
@@ -479,14 +518,20 @@ export class Factory<
      */
     partial(): Factory<Partial<T>> {
         return new Factory<Partial<T>>(
-            (_, iteration) => {
-                const fullValues = this.factory(this, iteration);
+            (factory, iteration) => {
+                const fullValues = this.factory(
+                    factory as unknown as Factory<T, O, F>,
+                    iteration,
+                );
                 if (fullValues instanceof Promise) {
                     return fullValues as Promise<FactorySchema<Partial<T>>>;
                 }
                 return fullValues as FactorySchema<Partial<T>>;
             },
-            { maxDepth: this.options?.maxDepth ?? DEFAULT_MAX_DEPTH },
+            {
+                maxDepth: this.options?.maxDepth ?? DEFAULT_MAX_DEPTH,
+                ...this.options,
+            } as Partial<O>,
         );
     }
 
@@ -561,27 +606,32 @@ export class Factory<
         isAsync: boolean,
     ): Factory<T> {
         return new Proxy(this, {
-            get: (target, prop) => {
+            get: (target: Factory<T, O, F>, prop: string | symbol) => {
                 if (prop === 'build') {
                     return isAsync
-                        ? async (buildKwargs?: Partial<T>) =>
+                        ? (buildKwargs?: Partial<T>) =>
                               target.#generateAsync(0, buildKwargs, depth + 1)
                         : (buildKwargs?: Partial<T>) =>
                               target.#generate(0, buildKwargs, depth + 1);
                 }
                 if (prop === 'batch') {
                     return isAsync
-                        ? async (
+                        ? (
                               size: number,
                               batchKwargs?: Partial<T> | Partial<T>[],
-                          ) =>
-                              this.#batchAsync(target, size, batchKwargs, depth)
+                          ) => target.#batchAsync(size, batchKwargs, depth)
                         : (
                               size: number,
                               batchKwargs?: Partial<T> | Partial<T>[],
-                          ) => this.#batch(target, size, batchKwargs, depth);
+                          ) =>
+                              target.#batch(
+                                  target as unknown as Factory<T>,
+                                  size,
+                                  batchKwargs,
+                                  depth,
+                              );
                 }
-                return Reflect.get(target, prop);
+                return Reflect.get(target, prop) as unknown;
             },
         }) as Factory<T>;
     }
@@ -626,20 +676,20 @@ export class Factory<
     }
 
     async #batchAsync(
-        target: Factory<T>,
         size: number,
         batchKwargs: Partial<T> | Partial<T>[] | undefined,
         depth: number,
-    ): Promise<T[]> {
+    ): Promise<F extends FactoryFunction<T> ? T[] : Partial<T>[]> {
         if (this.isDepthExceeded(depth + 1)) {
             return null as unknown as T[];
         }
         validateBatchSize(size);
+
         if (size === 0) {
             return [];
         }
         if (batchKwargs) {
-            const generator = target.iterate<Partial<T>>(
+            const generator = this.iterate<Partial<T>>(
                 Array.isArray(batchKwargs)
                     ? batchKwargs
                     : ([batchKwargs] as Partial<T>[]),
@@ -647,13 +697,15 @@ export class Factory<
             const promises = new Array(size)
                 .fill(null)
                 .map((_, i) =>
-                    target.#generateAsync(i, generator.next().value, depth + 1),
+                    this.#generateAsync(i, generator.next().value, depth + 1),
                 );
             return Promise.all(promises);
         }
+
         const promises = new Array(size)
             .fill(null)
-            .map((_, i) => target.#generateAsync(i, undefined, depth + 1));
+            .map((_, i) => this.#generateAsync(i, undefined, depth + 1));
+
         return Promise.all(promises);
     }
 

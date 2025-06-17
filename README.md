@@ -457,6 +457,55 @@ const user = UserWithStatusFactory.build();
 // }
 ```
 
+#### `partial`
+
+Creates a new factory where all properties are optional (Partial<T>). This is useful for creating test data where only specific fields need to be set, or when working with partial updates.
+
+**Signature:**
+
+```typescript
+partial(): Factory<Partial<T>>
+```
+
+**Usage:**
+
+```typescript
+// Original factory with required fields
+const UserFactory = new Factory<User>((factory) => ({
+    id: factory.string.uuid(),
+    name: factory.person.fullName(),
+    email: factory.internet.email(),
+    age: factory.number.int({ min: 18, max: 80 }),
+    isActive: factory.datatype.boolean(),
+}));
+
+// Create a partial factory where all fields are optional
+const PartialUserFactory = UserFactory.partial();
+
+// Generate partial users with all fields populated
+const partialUser = PartialUserFactory.build();
+// partialUser: Partial<User> - all properties are generated but optional
+
+// Override only specific fields
+const updateData = PartialUserFactory.build({
+    email: 'newemail@example.com',
+    age: 30,
+});
+// updateData == {
+//     id: "generated-uuid",
+//     name: "generated-name",
+//     email: "newemail@example.com",
+//     age: 30,
+//     isActive: true
+// }
+
+// Useful for testing partial updates
+const patchData = PartialUserFactory.build({
+    email: 'updated@example.com',
+});
+// Can be used for PATCH requests where only email is being updated
+```
+
 #### `beforeBuild`
 
 Adds a hook that will be executed before building the instance. Hooks receive the partial parameters (kwargs) and can modify them before the instance is built.
