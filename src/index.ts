@@ -7,9 +7,23 @@ import {
     isIterator,
     isRecord,
 } from '@tool-belt/type-predicates';
-import { createHash } from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
+// Node.js modules - only available in Node.js environment
+let createHash: typeof import('node:crypto').createHash | undefined;
+let fs: typeof import('node:fs') | undefined;
+let path: typeof import('node:path') | undefined;
+
+// Conditionally import Node.js modules for fixture functionality
+/* eslint-disable @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, prefer-destructuring */
+if (typeof process !== 'undefined' && process.versions?.node) {
+    try {
+        createHash = require('node:crypto').createHash;
+        fs = require('node:fs');
+        path = require('node:path');
+    } catch {
+        // Ignore import errors in environments where Node.js modules aren't available
+    }
+}
+/* eslint-enable @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, prefer-destructuring */
 import {
     ConfigurationError,
     FixtureError,
@@ -799,6 +813,11 @@ export class Factory<
     protected calculateSignature(
         config: Required<FixtureConfiguration>,
     ): string {
+        if (!createHash) {
+            throw new FixtureError(
+                'Fixture functionality is not available in browser environments',
+            );
+        }
         const hash = createHash('sha256');
 
         // Always include factory type name
@@ -895,6 +914,11 @@ export class Factory<
         filePath: string,
         config: Required<FixtureConfiguration>,
     ): { fixturesDir: string; fullPath: string } {
+        if (!path) {
+            throw new FixtureError(
+                'Fixture functionality is not available in browser environments',
+            );
+        }
         if (!filePath.trim()) {
             throw new FixtureError('Fixture file path cannot be empty');
         }
@@ -931,6 +955,11 @@ export class Factory<
     }
 
     protected readFixture(fullPath: string): FixtureMetadata | null {
+        if (!fs) {
+            throw new FixtureError(
+                'Fixture functionality is not available in browser environments',
+            );
+        }
         if (!fs.existsSync(fullPath)) {
             return null;
         }
@@ -967,6 +996,11 @@ export class Factory<
         data: unknown,
         config: Required<FixtureConfiguration>,
     ): void {
+        if (!fs) {
+            throw new FixtureError(
+                'Fixture functionality is not available in browser environments',
+            );
+        }
         try {
             if (!fs.existsSync(parsedPath.fixturesDir)) {
                 fs.mkdirSync(parsedPath.fixturesDir, { recursive: true });

@@ -61,6 +61,14 @@ The library has a modular structure:
 
 The build output supports both CommonJS and ES modules, with TypeScript declarations included. The Zod integration is optional via peer dependency.
 
+## Browser Compatibility
+
+**Core Functionality**: The library's core factory functionality works in both Node.js and browser environments.
+
+**Fixture Functionality**: Fixture generation (`buildFixture()`, `buildFixtureAsync()`) is **only available in Node.js environments**. This functionality depends on Node.js file system and crypto modules that are not available in browsers.
+
+When fixture methods are called in browser environments, they will throw a `FixtureError` with the message: "Fixture functionality is not available in browser environments".
+
 ## Development Workflow
 
 1. **Before committing**: The project uses husky git hooks that automatically run linters and enforce conventional commit messages

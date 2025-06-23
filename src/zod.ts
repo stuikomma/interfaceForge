@@ -79,7 +79,7 @@ import type {
     $ZodType,
 } from 'zod/v4/core';
 import { Factory, FactoryFunction, type FactoryOptions } from './index';
-import { ConfigurationError } from './errors';
+import { ConfigurationError, FixtureError } from './errors';
 import {
     createTypeGuard,
     isAsyncFunction,
@@ -87,7 +87,19 @@ import {
     isNotNullish,
     isObject,
 } from '@tool-belt/type-predicates';
-import { createHash } from 'node:crypto';
+// Node.js modules - only available in Node.js environment
+let createHash: typeof import('node:crypto').createHash | undefined;
+
+// Conditionally import Node.js modules for fixture functionality
+/* eslint-disable @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, prefer-destructuring */
+if (typeof process !== 'undefined' && process.versions?.node) {
+    try {
+        createHash = require('node:crypto').createHash;
+    } catch {
+        // Ignore import errors in environments where Node.js modules aren't available
+    }
+}
+/* eslint-enable @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, prefer-destructuring */
 import { PartialFactoryFunction } from '.';
 import {
     COLLECTION_SIZES,
@@ -2037,6 +2049,11 @@ export class ZodFactory<
     protected calculateSignature(
         config: Required<import('./index').FixtureConfiguration>,
     ): string {
+        if (!createHash) {
+            throw new FixtureError(
+                'Fixture functionality is not available in browser environments',
+            );
+        }
         const baseSignature = super.calculateSignature(config);
         const hash = createHash('sha256');
 

@@ -21,7 +21,7 @@ export default defineConfig({
         },
         minify: true,
         rollupOptions: {
-            external: ['zod'],
+            external: ['zod', 'node:crypto', 'node:fs', 'node:path'],
             output: {
                 preserveModules: false,
             },
