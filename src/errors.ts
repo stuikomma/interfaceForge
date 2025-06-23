@@ -14,6 +14,20 @@ export class ConfigurationError extends Error {
     }
 }
 
+export class FixtureError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'FixtureError';
+    }
+}
+
+export class FixtureValidationError extends FixtureError {
+    constructor(message: string) {
+        super(message);
+        this.name = 'FixtureValidationError';
+    }
+}
+
 export class ValidationError extends Error {
     constructor(message: string) {
         super(message);

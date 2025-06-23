@@ -87,6 +87,7 @@ import {
     isNotNullish,
     isObject,
 } from '@tool-belt/type-predicates';
+import { createHash } from 'node:crypto';
 import { PartialFactoryFunction } from '.';
 import {
     COLLECTION_SIZES,
@@ -1804,7 +1805,10 @@ export class ZodFactory<
                 const generatedSchema = this.generator.generateFromSchema(
                     this.schema,
                 );
-                const generatedFromFactory = this.factory(this, i);
+                const generatedFromFactory = this.factory(
+                    this as unknown as Factory<z.output<T>>,
+                    i,
+                );
 
                 const result = this.schema.parse({
                     ...(generatedSchema as Record<string, unknown>),
@@ -1818,7 +1822,10 @@ export class ZodFactory<
                 const generatedSchema = this.generator.generateFromSchema(
                     this.schema,
                 );
-                const generatedFromFactory = this.factory(this, i);
+                const generatedFromFactory = this.factory(
+                    this as unknown as Factory<z.output<T>>,
+                    i,
+                );
 
                 const result = this.schema.parse({
                     ...(generatedSchema as Record<string, unknown>),
@@ -1841,6 +1848,7 @@ export class ZodFactory<
      * 4. Validates the result against the schema
      *
      * @param kwargs - Optional property overrides
+     * @param options - Optional build options including fixture generation
      * @returns A generated instance conforming to the schema
      *
      * @example
@@ -1850,8 +1858,17 @@ export class ZodFactory<
      *   isActive: true
      * });
      * ```
+     *
+     * @example
+     * With fixture generation:
+     * ```typescript
+     * const user = factory.build(undefined, { generateFixture: 'user-fixture' });
+     * ```
      */
-    build = (kwargs?: Partial<z.output<T>>): z.output<T> => {
+    build = (
+        kwargs?: Partial<z.output<T>>,
+        options?: Partial<O>,
+    ): z.output<T> => {
         if (isAsyncFunction(this.factory)) {
             throw new ConfigurationError(
                 'Async factory function detected. Use buildAsync() method to build instances with async factories.',
@@ -1868,6 +1885,21 @@ export class ZodFactory<
             );
         }
 
+        // Check if fixture generation is requested
+        const mergedOptions = {
+            ...this.options,
+            ...options,
+        } as FactoryOptions & O;
+        if (mergedOptions.generateFixture && mergedOptions.fixtures) {
+            const fixturePath =
+                typeof mergedOptions.generateFixture === 'string'
+                    ? mergedOptions.generateFixture
+                    : this.getDefaultFixturePath();
+
+            return this.buildWithFixture(fixturePath, kwargs, mergedOptions);
+        }
+
+        // Normal build without fixtures
         let params = kwargs ?? {};
 
         for (const hook of this.beforeBuildHooks) {
@@ -1875,7 +1907,10 @@ export class ZodFactory<
         }
 
         const generatedSchema = this.generator.generateFromSchema(this.schema);
-        const generatedFromFactory = this.factory(this, 0);
+        const generatedFromFactory = this.factory(
+            this as unknown as Factory<z.output<T>>,
+            0,
+        );
 
         const merged =
             Array.isArray(generatedSchema) ||
@@ -1932,5 +1967,102 @@ export class ZodFactory<
     withTypeHandlers(handlers: Record<string, ZodTypeHandler>): this {
         this.generator.registerTypeHandlers(handlers);
         return this;
+    }
+
+    /**
+     * Override buildWithFixture to handle Zod-specific generation
+     *
+     * @param filePath The fixture file path
+     * @param kwargs Optional property overrides
+     * @param _options Build options
+     * @returns The generated Zod object
+     */
+    protected buildWithFixture(
+        filePath: string,
+        kwargs?: Partial<z.output<T>>,
+        _options?: Partial<O>,
+    ): z.output<T> {
+        const fixtureConfig = this.getFixtureConfig();
+        const parsedPath = this.parseFixturePath(filePath, fixtureConfig);
+
+        // Check if fixture already exists
+        const existing = this.readFixture(parsedPath.fullPath);
+        if (existing) {
+            this.validateFixture(existing, fixtureConfig);
+            return existing.data as z.output<T>;
+        }
+
+        // Generate new data using Zod schema
+        let params = kwargs ?? {};
+
+        for (const hook of this.beforeBuildHooks) {
+            params = hook(params) as Partial<z.output<T>>;
+        }
+
+        const generatedSchema = this.generator.generateFromSchema(this.schema);
+        const generatedFromFactory = this.factory(
+            this as unknown as Factory<z.output<T>>,
+            0,
+        );
+
+        const merged =
+            Array.isArray(generatedSchema) ||
+            typeof generatedSchema !== 'object' ||
+            generatedSchema === null
+                ? generatedSchema
+                : merge(
+                      generatedSchema as Record<string, unknown>,
+                      generatedFromFactory as Record<string, unknown>,
+                      params as Record<string, unknown>,
+                  );
+
+        let result = this.schema.parse(merged);
+
+        for (const hook of this.afterBuildHooks) {
+            result = hook(result) as z.output<T>;
+        }
+
+        // Write fixture
+        this.writeFixture(parsedPath, result, fixtureConfig);
+
+        return result;
+    }
+
+    /**
+     * Override signature calculation to include Zod schema information
+     *
+     * @param config Fixture configuration
+     * @returns SHA-256 hash of the factory signature
+     */
+    protected calculateSignature(
+        config: Required<import('./index').FixtureConfiguration>,
+    ): string {
+        const baseSignature = super.calculateSignature(config);
+        const hash = createHash('sha256');
+
+        // Start with base signature
+        hash.update(baseSignature);
+
+        // Add schema shape information
+        try {
+            const shape = this.schema.shape as Record<string, ZodType>;
+            if (isObject(shape)) {
+                const schemaKeys = Object.keys(shape).sort();
+                hash.update(JSON.stringify(schemaKeys));
+
+                // Add type information for each field
+                for (const key of schemaKeys) {
+                    const fieldSchema = shape[key];
+                    const typeName = getSchemaTypeName(fieldSchema);
+                    if (typeName) {
+                        hash.update(`${key}:${typeName}`);
+                    }
+                }
+            }
+        } catch {
+            // If we can't extract schema information, just use base signature
+        }
+
+        return hash.digest('hex');
     }
 }
