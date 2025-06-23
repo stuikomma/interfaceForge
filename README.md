@@ -33,6 +33,13 @@ Interface-Forge is a TypeScript library for creating strongly typed mock data fa
     - [Why Interface-Forge?](#why-interface-forge)
     - [Installation](#installation)
     - [Basic Example](#basic-example)
+    - [Fixture Generation](#fixture-generation)
+        - [Basic Fixture Usage](#basic-fixture-usage)
+        - [Fixture Configuration](#fixture-configuration)
+        - [Custom Fixture Paths](#custom-fixture-paths)
+        - [Fixture Validation](#fixture-validation)
+        - [Fixture Use Cases](#fixture-use-cases)
+        - [Zod Schema Fixtures](#zod-schema-fixtures)
     - [Extending Factory](#extending-factory)
     - [API Reference](#api-reference)
         - [Factory Class Methods](#factory-class-methods)
@@ -147,6 +154,183 @@ describe('User', () => {
 });
 ```
 
+## Fixture Generation
+
+Interface-Forge supports generating and caching test data as fixtures, making it easy to create consistent test data across multiple test runs. Fixtures are generated using the `generateFixture` option in the `build()` and `buildAsync()` methods.
+
+### Basic Fixture Usage
+
+```typescript
+const UserFactory = new Factory<User>(
+    (faker) => ({
+        id: faker.string.uuid(),
+        name: faker.person.fullName(),
+        email: faker.internet.email(),
+    }),
+    {
+        fixtures: { basePath: './test/fixtures' },
+    },
+);
+
+// Creates or loads fixture from ./test/fixtures/__fixtures__/user.json
+const user = UserFactory.build(undefined, { generateFixture: 'user' });
+
+// With overrides
+const adminUser = UserFactory.build(
+    { role: 'admin' },
+    { generateFixture: 'admin-user' },
+);
+
+// Auto-generated fixture path (uses factory name and timestamp)
+const autoUser = UserFactory.build(undefined, { generateFixture: true });
+
+// Async fixtures
+const asyncUser = await UserFactory.buildAsync(undefined, {
+    generateFixture: 'async-user',
+});
+
+// Configure at factory level for all builds
+const FixturedFactory = new Factory<User>(
+    (faker) => ({
+        // ... factory definition
+    }),
+    {
+        fixtures: { basePath: './test/fixtures' },
+        generateFixture: 'default-user',
+    },
+);
+
+// All builds will use fixtures
+const user1 = FixturedFactory.build();
+const user2 = FixturedFactory.build(); // Returns cached data
+```
+
+### Fixture Configuration
+
+Configure how fixtures are stored and validated:
+
+```typescript
+const factory = new Factory<User>(
+    (faker) => ({
+        // ... factory definition
+    }),
+    {
+        fixtures: {
+            // Base directory for fixtures (default: process.cwd())
+            basePath: './test/fixtures',
+
+            // Subdirectory name (default: '__fixtures__')
+            directory: 'my-fixtures',
+
+            // Validate factory signature changes (default: true)
+            validateSignature: true,
+
+            // Include factory source in signature (default: true)
+            includeSource: true,
+
+            // Use subdirectories (default: true)
+            useSubdirectory: true,
+        },
+    },
+);
+```
+
+### Custom Fixture Paths
+
+Control where fixtures are stored:
+
+```typescript
+// Default behavior: ./test/fixtures/__fixtures__/user.json
+factory.build(undefined, { generateFixture: 'user' });
+
+// Nested paths: ./test/fixtures/api/v1/__fixtures__/user.json
+factory.build(undefined, { generateFixture: 'api/v1/user' });
+
+// No subdirectory: ./test/fixtures/user.json
+const factory = new Factory<User>(/* ... */, {
+    fixtures: {
+        basePath: './test/fixtures',
+        useSubdirectory: false
+    }
+});
+factory.build(undefined, { generateFixture: 'user' });
+
+// Custom directory name: ./test/fixtures/cached/user.json
+const factory = new Factory<User>(/* ... */, {
+    fixtures: {
+        basePath: './test/fixtures',
+        directory: 'cached'
+    }
+});
+factory.build(undefined, { generateFixture: 'user' });
+```
+
+### Fixture Validation
+
+Interface-Forge validates fixtures to ensure they match the current factory configuration:
+
+```typescript
+// Factory signature includes:
+// - Factory constructor name
+// - Factory function source (if includeSource: true)
+// - Relevant options (maxDepth)
+// - Hook counts
+
+// If factory changes, fixture validation will fail
+const factory1 = new Factory<User>((faker) => ({
+    name: faker.person.firstName()
+}));
+
+factory1.build(undefined, { generateFixture: 'user' }); // Creates fixture
+
+// Different factory = different signature
+const factory2 = new Factory<User>((faker) => ({
+    name: faker.person.firstName(),
+    email: faker.internet.email() // Added field
+}), {
+    fixtures: { basePath: './test/fixtures' }
+});
+
+factory2.build(undefined, { generateFixture: 'user' }); // Throws FixtureValidationError
+
+// Disable validation if needed
+const factory3 = new Factory<User>(/* ... */, {
+    fixtures: { validateSignature: false }
+});
+```
+
+### Fixture Use Cases
+
+Fixtures are ideal for:
+
+1. **Consistent Test Data**: Generate the same data across test runs
+2. **Performance**: Avoid regenerating complex data structures
+3. **Debugging**: Inspect generated test data as JSON files
+4. **Shared Test Data**: Share fixtures between different test suites
+5. **Snapshot Testing**: Compare generated data against known good fixtures
+
+### Zod Schema Fixtures
+
+Fixtures work seamlessly with ZodFactory:
+
+```typescript
+import { z } from 'zod/v4';
+import { ZodFactory } from 'interface-forge/zod';
+
+const UserSchema = z.object({
+    id: z.uuid(),
+    name: z.string(),
+    email: z.email(),
+});
+
+const factory = new ZodFactory(UserSchema, {
+    fixtures: { basePath: './test/fixtures' },
+});
+
+// Schema information is included in fixture signature
+const user = factory.build(undefined, { generateFixture: 'zod-user' });
+```
+
 ## Extending Factory
 
 Interface-Forge allows you to extend the base Factory class to add custom functionality:
@@ -178,12 +362,12 @@ const userWithTimestamp = factory.buildWithTimestamp();
 
 #### `build`
 
-Builds a single object based on the factory's schema. Optionally, you can pass an object to override specific properties.
+Builds a single object based on the factory's schema. Optionally, you can pass an object to override specific properties and/or options to control fixture generation.
 
 **Signature:**
 
 ```typescript
-build(kwargs?: Partial<T>): T
+build(kwargs?: Partial<T>, options?: { generateFixture?: boolean | string }): T
 ```
 
 **Usage:**
@@ -203,6 +387,11 @@ const user = UserFactory.build();
 
 const customUser = UserFactory.build({
     profile: { age: 35 },
+});
+
+// With fixture generation
+const fixturedUser = UserFactory.build(undefined, {
+    generateFixture: 'test-user',
 });
 // customUser.profile.age == 35
 ```
@@ -565,12 +754,12 @@ const product = ProductFactory.build();
 
 #### `buildAsync`
 
-Builds an instance asynchronously with all registered hooks applied in sequence. This method supports both synchronous and asynchronous hooks.
+Builds an instance asynchronously with all registered hooks applied in sequence. This method supports both synchronous and asynchronous hooks and fixture generation.
 
 **Signature:**
 
 ```typescript
-buildAsync(kwargs?: Partial<T>): Promise<T>
+buildAsync(kwargs?: Partial<T>, options?: { generateFixture?: boolean | string }): Promise<T>
 ```
 
 **Usage:**
@@ -590,6 +779,11 @@ const UserFactory = new Factory<User>((factory) => ({
 // Must use buildAsync for async hooks
 const user = await UserFactory.buildAsync();
 // user.isVerified == true
+
+// With fixture generation
+const fixturedUser = await UserFactory.buildAsync(undefined, {
+    generateFixture: 'verified-user',
+});
 ```
 
 **Important Hook Behavior:**

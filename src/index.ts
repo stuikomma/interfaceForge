@@ -7,7 +7,14 @@ import {
     isIterator,
     isRecord,
 } from '@tool-belt/type-predicates';
-import { ConfigurationError } from './errors';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+    ConfigurationError,
+    FixtureError,
+    FixtureValidationError,
+} from './errors';
 import { CycleGenerator, SampleGenerator } from './generators';
 import { merge, Ref, validateBatchSize } from './utils';
 import { DEFAULT_MAX_DEPTH } from './constants';
@@ -15,6 +22,8 @@ import { DEFAULT_MAX_DEPTH } from './constants';
 export {
     CircularReferenceError,
     ConfigurationError,
+    FixtureError,
+    FixtureValidationError,
     ValidationError,
 } from './errors';
 export { Ref } from './utils';
@@ -43,6 +52,16 @@ export type FactoryFunction<T> = (
 ) => FactorySchema<T> | Promise<FactorySchema<T>>;
 
 export interface FactoryOptions {
+    /**
+     * Fixture configuration for caching generated data
+     */
+    fixtures?: FixtureConfiguration;
+    /**
+     * Enable fixture generation/loading for this build.
+     * - true: Use default fixture path based on call stack
+     * - string: Use as fixture file path
+     */
+    generateFixture?: boolean | string;
     locale?: LocaleDefinition | LocaleDefinition[];
     maxDepth?: number;
     randomizer?: Randomizer;
@@ -54,6 +73,51 @@ export type FactorySchema<T> = {
         | Ref<T[K], (...args: unknown[]) => T[K]>
         | T[K];
 };
+
+export interface FixtureConfiguration {
+    /**
+     * Base directory for storing fixtures. Defaults to process.cwd()
+     */
+    basePath?: string;
+    /**
+     * Custom directory name for fixtures. Defaults to '__fixtures__'
+     * Set to empty string to store fixtures in the same directory as the file path
+     */
+    directory?: string;
+    /**
+     * Whether to include the factory function source in signature calculation. Defaults to true
+     */
+    includeSource?: boolean;
+    /**
+     * Whether to use subdirectories for fixtures. Defaults to true
+     * When true: fixtures are stored in a subdirectory (e.g., /path/__fixtures__/file.json)
+     * When false: fixtures are stored directly in the path (e.g., /path/file.json)
+     */
+    useSubdirectory?: boolean;
+    /**
+     * Whether to validate factory signature changes. Defaults to true
+     */
+    validateSignature?: boolean;
+}
+
+export interface FixtureMetadata {
+    /**
+     * ISO 8601 timestamp when the fixture was created
+     */
+    createdAt: string;
+    /**
+     * The actual fixture data
+     */
+    data: unknown;
+    /**
+     * SHA-256 hash of the factory configuration
+     */
+    signature: string;
+    /**
+     * Fixture version for future compatibility
+     */
+    version: number;
+}
 
 export type PartialFactoryFunction<T> = (
     factory: Factory<T>,
@@ -243,11 +307,15 @@ export class Factory<
      * If async hooks are registered, a ConfigurationError is thrown.
      *
      * @param kwargs Properties to override in the generated instance
+     * @param options Factory options including fixture generation
      * @returns A new instance with factory-generated values merged with any overrides
      * @throws {ConfigurationError} If async hooks are registered
+     * @throws {FixtureError} If fixture operations fail
+     * @throws {FixtureValidationError} If fixture validation fails
      */
     build = (
         kwargs?: Partial<T>,
+        options?: Partial<O>,
     ): F extends FactoryFunction<T> ? T : Partial<T> => {
         if (isAsyncFunction(this.factory)) {
             throw new ConfigurationError(
@@ -265,6 +333,21 @@ export class Factory<
             );
         }
 
+        // Check if fixture generation is requested
+        const mergedOptions = {
+            ...this.options,
+            ...options,
+        } as FactoryOptions & O;
+        if (mergedOptions.generateFixture && mergedOptions.fixtures) {
+            const fixturePath =
+                typeof mergedOptions.generateFixture === 'string'
+                    ? mergedOptions.generateFixture
+                    : this.getDefaultFixturePath();
+
+            return this.buildWithFixture(fixturePath, kwargs, mergedOptions);
+        }
+
+        // Normal build without fixtures
         let params = kwargs ?? {};
 
         for (const hook of this.beforeBuildHooks) {
@@ -292,12 +375,35 @@ export class Factory<
      * Hooks are executed in the order they were registered.
      *
      * @param kwargs Optional properties to override in the generated instance
+     * @param options Factory options including fixture generation
      * @returns A promise that resolves to the built and processed instance
      * @throws {Error} If any hook throws an error during execution
+     * @throws {FixtureError} If fixture operations fail
+     * @throws {FixtureValidationError} If fixture validation fails
      */
     async buildAsync(
         kwargs?: Partial<T>,
+        options?: Partial<O>,
     ): Promise<F extends FactoryFunction<T> ? T : Partial<T>> {
+        // Check if fixture generation is requested
+        const mergedOptions = {
+            ...this.options,
+            ...options,
+        } as FactoryOptions & O;
+        if (mergedOptions.generateFixture && mergedOptions.fixtures) {
+            const fixturePath =
+                typeof mergedOptions.generateFixture === 'string'
+                    ? mergedOptions.generateFixture
+                    : this.getDefaultFixturePath();
+
+            return this.buildWithFixtureAsync(
+                fixturePath,
+                kwargs,
+                mergedOptions,
+            );
+        }
+
+        // Normal build without fixtures
         let params = kwargs ?? {};
 
         for (const hook of this.beforeBuildHooks) {
@@ -505,7 +611,7 @@ export class Factory<
      * @returns A generator that yields values in order, restarting after the last element
      * @throws {Error} If the iterable is empty
      */
-    iterate<T>(iterable: Iterable<T>): Generator<T, T, T> {
+    iterate<U>(iterable: Iterable<U>): Generator<U, U, U> {
         const generator = new CycleGenerator(iterable);
         return generator.generate();
     }
@@ -545,7 +651,7 @@ export class Factory<
      * @returns A generator that yields random values without consecutive repetition
      * @throws {Error} If the iterable is empty
      */
-    sample<T>(iterable: Iterable<T>): Generator<T, T, T> {
+    sample<U>(iterable: Iterable<U>): Generator<U, U, U> {
         const generator = new SampleGenerator(iterable);
         return generator.generate();
     }
@@ -595,6 +701,128 @@ export class Factory<
         return this;
     }
 
+    protected buildWithFixture(
+        filePath: string,
+        kwargs: Partial<T> | undefined,
+        _options: FactoryOptions & O,
+    ): F extends FactoryFunction<T> ? T : Partial<T> {
+        const fixtureConfig = this.getFixtureConfig();
+        const parsedPath = this.parseFixturePath(filePath, fixtureConfig);
+
+        try {
+            const existing = this.readFixture(parsedPath.fullPath);
+            if (existing) {
+                this.validateFixture(existing, fixtureConfig);
+                return existing.data as F extends FactoryFunction<T>
+                    ? T
+                    : Partial<T>;
+            }
+        } catch (error) {
+            if (error instanceof FixtureError) {
+                throw error;
+            }
+            if (
+                error instanceof FixtureValidationError &&
+                fixtureConfig.validateSignature
+            ) {
+                throw error;
+            }
+        }
+
+        // Generate new data
+        let params = kwargs ?? {};
+        for (const hook of this.beforeBuildHooks) {
+            params = hook(params) as Partial<T>;
+        }
+
+        let result = this.#generate(0, params, 0);
+        if (result instanceof Promise) {
+            throw new ConfigurationError(
+                'Async factory function detected. Use buildAsync() method to build instances with async factories.',
+            );
+        }
+
+        for (const hook of this.afterBuildHooks) {
+            result = hook(result) as T;
+        }
+
+        // Save fixture
+        this.writeFixture(parsedPath, result, fixtureConfig);
+        return result;
+    }
+
+    protected async buildWithFixtureAsync(
+        filePath: string,
+        kwargs: Partial<T> | undefined,
+        _options: FactoryOptions & O,
+    ): Promise<F extends FactoryFunction<T> ? T : Partial<T>> {
+        const fixtureConfig = this.getFixtureConfig();
+        const parsedPath = this.parseFixturePath(filePath, fixtureConfig);
+
+        try {
+            const existing = this.readFixture(parsedPath.fullPath);
+            if (existing) {
+                this.validateFixture(existing, fixtureConfig);
+                return existing.data as F extends FactoryFunction<T>
+                    ? T
+                    : Partial<T>;
+            }
+        } catch (error) {
+            if (error instanceof FixtureError) {
+                throw error;
+            }
+            if (
+                error instanceof FixtureValidationError &&
+                fixtureConfig.validateSignature
+            ) {
+                throw error;
+            }
+        }
+
+        // Generate new data
+        let params = kwargs ?? {};
+        for (const hook of this.beforeBuildHooks) {
+            params = await hook(params);
+        }
+
+        let result = await this.#generateAsync(0, params, 0);
+
+        for (const hook of this.afterBuildHooks) {
+            result = await hook(result);
+        }
+
+        // Save fixture
+        this.writeFixture(parsedPath, result, fixtureConfig);
+        return result;
+    }
+
+    protected calculateSignature(
+        config: Required<FixtureConfiguration>,
+    ): string {
+        const hash = createHash('sha256');
+
+        // Always include factory type name
+        hash.update(this.constructor.name);
+
+        // Include factory function source if configured
+        if (config.includeSource) {
+            hash.update(this.factory.toString());
+        }
+
+        // Include options that affect generation
+        const relevantOptions = {
+            // Locale is part of constructor options, not a direct property
+            maxDepth: this.options?.maxDepth,
+        };
+        hash.update(JSON.stringify(relevantOptions));
+
+        // Include hooks presence (not the actual functions to avoid unstable signatures)
+        hash.update(`beforeHooks:${this.beforeBuildHooks.length}`);
+        hash.update(`afterHooks:${this.afterBuildHooks.length}`);
+
+        return hash.digest('hex');
+    }
+
     /**
      * @internal
      * @param depth - Current depth in recursive generation
@@ -636,6 +864,24 @@ export class Factory<
         }) as Factory<T>;
     }
 
+    protected getDefaultFixturePath(): string {
+        // Generate a default fixture path based on the factory name and current timestamp
+        const timestamp = Date.now();
+        const factoryName = this.constructor.name;
+        return `${factoryName.toLowerCase()}-${timestamp}`;
+    }
+
+    protected getFixtureConfig(): Required<FixtureConfiguration> {
+        return {
+            basePath: this.options?.fixtures?.basePath ?? process.cwd(),
+            directory: this.options?.fixtures?.directory ?? '__fixtures__',
+            includeSource: this.options?.fixtures?.includeSource ?? true,
+            useSubdirectory: this.options?.fixtures?.useSubdirectory ?? true,
+            validateSignature:
+                this.options?.fixtures?.validateSignature ?? true,
+        };
+    }
+
     /**
      * @internal
      * @param depth - Current depth in recursive generation
@@ -643,6 +889,105 @@ export class Factory<
      */
     protected isDepthExceeded(depth: number): boolean {
         return depth >= (this.options?.maxDepth ?? DEFAULT_MAX_DEPTH);
+    }
+
+    protected parseFixturePath(
+        filePath: string,
+        config: Required<FixtureConfiguration>,
+    ): { fixturesDir: string; fullPath: string } {
+        if (!filePath.trim()) {
+            throw new FixtureError('Fixture file path cannot be empty');
+        }
+
+        const resolvedPath = path.isAbsolute(filePath)
+            ? filePath
+            : path.join(config.basePath, filePath);
+
+        const dir = path.dirname(resolvedPath);
+        const fileName = path.basename(resolvedPath);
+        const ext = path.extname(fileName);
+
+        const jsonFileName =
+            ext === '.json'
+                ? fileName
+                : ext
+                  ? fileName.replace(ext, '.json')
+                  : `${fileName}.json`;
+
+        let fixturesDir: string;
+        let fullPath: string;
+
+        if (config.useSubdirectory && config.directory) {
+            // Use subdirectory structure (default behavior)
+            fixturesDir = path.join(dir, config.directory);
+            fullPath = path.join(fixturesDir, jsonFileName);
+        } else {
+            // Store directly in the specified directory
+            fixturesDir = dir;
+            fullPath = path.join(dir, jsonFileName);
+        }
+
+        return { fixturesDir, fullPath };
+    }
+
+    protected readFixture(fullPath: string): FixtureMetadata | null {
+        if (!fs.existsSync(fullPath)) {
+            return null;
+        }
+
+        try {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            return JSON.parse(content) as FixtureMetadata;
+        } catch (error) {
+            throw new FixtureError(
+                `Failed to read fixture from ${fullPath}: ${(error as Error).message}`,
+            );
+        }
+    }
+
+    protected validateFixture(
+        metadata: FixtureMetadata,
+        config: Required<FixtureConfiguration>,
+    ): void {
+        if (!config.validateSignature) {
+            return;
+        }
+
+        const currentSignature = this.calculateSignature(config);
+        if (metadata.signature !== currentSignature) {
+            throw new FixtureValidationError(
+                `Factory signature has changed. Current: ${currentSignature}, Fixture: ${metadata.signature}. ` +
+                    `Delete the fixture file to regenerate it.`,
+            );
+        }
+    }
+
+    protected writeFixture(
+        parsedPath: { fixturesDir: string; fullPath: string },
+        data: unknown,
+        config: Required<FixtureConfiguration>,
+    ): void {
+        try {
+            if (!fs.existsSync(parsedPath.fixturesDir)) {
+                fs.mkdirSync(parsedPath.fixturesDir, { recursive: true });
+            }
+
+            const metadata: FixtureMetadata = {
+                createdAt: new Date().toISOString(),
+                data,
+                signature: this.calculateSignature(config),
+                version: 1,
+            };
+
+            fs.writeFileSync(
+                parsedPath.fullPath,
+                JSON.stringify(metadata, null, 2),
+            );
+        } catch (error) {
+            throw new FixtureError(
+                `Failed to write fixture to ${parsedPath.fullPath}: ${(error as Error).message}`,
+            );
+        }
     }
 
     #batch(
