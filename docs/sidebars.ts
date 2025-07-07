@@ -18,6 +18,14 @@ const sidebars: SidebarsConfig = {
                 'guides/utility-generators',
             ],
         },
+        {
+            type: 'category',
+            label: 'Key Concepts',
+            items: [
+                'key-concepts/the-factory',
+                'key-concepts/schema-integration',
+            ],
+        },
     ],
 };
 
