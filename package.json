@@ -109,7 +109,11 @@
     },
     "lint-staged": {
         "*.{ts,d.ts,js,mjs,md,json,yaml,yml}": "prettier --write",
-        "*.{ts,mjs}": "eslint --fix"
+        "*.{ts,mjs}": "eslint --fix",
+        "ai-rulez.yaml": [
+            "pnpm ai-rulez generate",
+            "git add CLAUDE.md GEMINI.md"
+        ]
     },
     "dependencies": {
         "@faker-js/faker": "^9.9.0",
