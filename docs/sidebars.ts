@@ -15,6 +15,7 @@ const sidebars: SidebarsConfig = {
                 'guides/basic-usage',
                 'guides/advanced-composition',
                 'guides/zod-integration',
+                'guides/utility-generators',
             ],
         },
     ],
