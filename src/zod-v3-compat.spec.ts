@@ -1,4 +1,4 @@
-import { z as zv3 } from 'zod';
+/* eslint-disable @typescript-eslint/no-deprecated */ import { z as zv3 } from 'zod';
 import { ZodFactory } from './zod';
 
 describe('ZodFactory Zod v3 Compatibility', () => {
@@ -209,7 +209,9 @@ describe('ZodFactory Zod v3 Compatibility', () => {
 
         it('should work with v3 record schemas', () => {
             const schema = zv3.object({
+                // @ts-expect-error, deprecated
                 metadata: zv3.record(zv3.string()),
+                // @ts-expect-error, deprecated
                 scores: zv3.record(zv3.number()),
             });
 

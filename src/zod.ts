@@ -86,6 +86,7 @@ import {
     isFunction,
     isNotNullish,
     isObject,
+    isRecord,
 } from '@tool-belt/type-predicates';
 // Node.js modules - only available in Node.js environment
 let createHash: typeof import('node:crypto').createHash | undefined;
@@ -424,7 +425,9 @@ const getSchemaTypeName = (schema: ZodType | ZodV3Type): string | undefined => {
     }
     if (hasZodV3Structure(schema)) {
         return (
+            // @ts-expect-error, v3 type compatibility
             (schema._def as { type?: string } | undefined)?.type ??
+            // @ts-expect-error, v3 type compatibility
             (schema._def as { typeName?: string } | undefined)?.typeName
         );
     }
@@ -443,6 +446,7 @@ const createZodTypeGuard = <T extends ZodType>(
 
             if (typeName) {
                 if (hasZodV3Structure(value)) {
+                    // eslint-disable-next-line @typescript-eslint/no-deprecated
                     const v3TypeName = Reflect.get(value._def, 'typeName') as
                         | string
                         | undefined;
@@ -980,11 +984,7 @@ class ZodSchemaGenerator {
         }
 
         return Array.from({ length }, () => {
-            const generated = this.generateFromSchema(
-                itemSchema,
-                currentDepth + 1,
-            );
-            return generated;
+            return this.generateFromSchema(itemSchema, currentDepth + 1);
         });
     }
 
@@ -1641,7 +1641,10 @@ class ZodSchemaGenerator {
         if (metadata.examples) {
             const examples = Array.isArray(metadata.examples)
                 ? metadata.examples
-                : Object.values(metadata.examples).map((ex) => ex.value ?? ex);
+                : Object.values(metadata.examples).map(
+                      (ex: { value?: string } | string) =>
+                          isRecord(ex) ? (ex.value ?? '') : ex,
+                  );
 
             if (examples.length > 0) {
                 return this.factory.helpers.arrayElement(examples);
