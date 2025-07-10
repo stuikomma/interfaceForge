@@ -6,26 +6,36 @@ const sidebars: SidebarsConfig = {
         {
             type: 'category',
             label: 'Getting Started',
-            items: ['getting-started/installation'],
-        },
-        {
-            type: 'category',
-            label: 'Guides',
             items: [
-                'guides/basic-usage',
-                'guides/advanced-composition',
-                'guides/zod-integration',
-                'guides/utility-generators',
+                'getting-started/installation',
+                'getting-started/basic-usage',
             ],
         },
         {
             type: 'category',
-            label: 'Key Concepts',
+            label: 'Core Concepts',
             items: [
-                'key-concepts/the-factory',
-                'key-concepts/schema-integration',
+                'core/factory-basics',
+                'core/composition',
+                'core/generators',
             ],
         },
+        {
+            type: 'category',
+            label: 'Schema Integration',
+            items: ['schema/zod-integration', 'schema/custom-handlers'],
+        },
+        {
+            type: 'category',
+            label: 'Advanced Features',
+            items: [
+                'advanced/persistence',
+                'advanced/fixtures',
+                'advanced/depth-control',
+            ],
+        },
+        'examples',
+        'api',
     ],
 };
 

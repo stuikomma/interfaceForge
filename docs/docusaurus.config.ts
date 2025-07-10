@@ -26,20 +26,7 @@ const config: Config = {
         locales: ['en'],
     },
 
-    plugins: [
-        [
-            'docusaurus-plugin-typedoc',
-            {
-                entryPoints: ['../src/index.ts', '../src/zod.ts'],
-                tsconfig: '../tsconfig.json',
-                out: 'api',
-                sidebar: {
-                    categoryLabel: 'API Reference',
-                    position: 1,
-                },
-            },
-        ],
-    ],
+    plugins: [],
 
     presets: [
         [
@@ -64,12 +51,12 @@ const config: Config = {
             title: 'Interface Forge',
             logo: {
                 alt: 'Interface Forge Logo',
-                src: 'img/logo.svg',
+                src: 'img/logo.png',
             },
             items: [
                 {
                     type: 'docSidebar',
-                    sidebarId: 'tutorialSidebar',
+                    sidebarId: 'docs',
                     position: 'left',
                     label: 'Docs',
                 },
@@ -93,7 +80,7 @@ const config: Config = {
                     items: [
                         {
                             label: 'Introduction',
-                            to: '/docs/intro',
+                            to: '/docs',
                         },
                         {
                             label: 'API Reference',
