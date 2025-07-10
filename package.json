@@ -51,7 +51,7 @@
         }
     },
     "engines": {
-        "node": ">=16.0.0"
+        "node": ">=18.0.0"
     },
     "sideEffects": false,
     "scripts": {
@@ -64,10 +64,9 @@
         "test": "vitest run",
         "test:coverage": "vitest run --coverage",
         "typecheck": "tsc --noEmit",
-        "gen:docs": "./node_modules/.bin/typedoc",
-        "gen:docs:markdown": "typedoc --options typedoc-markdown.json",
-        "gen:docs:all": "pnpm gen:docs && pnpm gen:docs:markdown",
-        "gen:docs:serve": "pnpm gen:docs && http-server docs -p 8081 -o -c-1"
+        "docs:start": "pnpm --filter docs start",
+        "docs:build": "pnpm --filter docs build",
+        "docs:serve": "pnpm --filter docs serve"
     },
     "devDependencies": {
         "@commitlint/cli": "^19.8.1",
@@ -75,9 +74,9 @@
         "@eslint/compat": "^1.3.1",
         "@eslint/js": "^9.30.1",
         "@prisma/client": "^6.11.1",
-        "@types/node": "^24.0.10",
+        "@types/node": "^24.0.12",
         "@vitest/coverage-v8": "^3.2.3",
-        "ai-rulez": "^1.1.3",
+        "ai-rulez": "^1.1.4",
         "eslint": "^9.30.1",
         "eslint-config-prettier": "^10.1.5",
         "eslint-plugin-jsdoc": "^51.3.4",
@@ -92,31 +91,33 @@
         "http-server": "^14.1.1",
         "husky": "^9.1.7",
         "lint-staged": "^16.1.2",
-        "mongoose": "^8.16.1",
+        "mongoose": "^8.16.2",
         "prettier": "^3.6.2",
         "type-fest": "^4.41.0",
-        "typedoc": "^0.28.7",
-        "typedoc-github-theme": "^0.3.0",
-        "typedoc-plugin-coverage": "^4.0.1",
-        "typedoc-plugin-markdown": "^4.7.0",
-        "typedoc-plugin-missing-exports": "^4.0.0",
         "typescript": "^5.8.3",
-        "typescript-eslint": "^8.35.1",
-        "vite": "^7.0.2",
+        "typescript-eslint": "^8.36.0",
+        "vite": "^7.0.3",
         "vite-plugin-dts": "^4.5.4",
         "vitest": "^3.2.4",
-        "zod": "^3.25.75"
+        "zod": "^4.0.2"
     },
     "lint-staged": {
         "*.{ts,d.ts,js,mjs,md,json,yaml,yml}": "prettier --write",
-        "*.{ts,mjs}": "eslint --fix"
+        "*.{ts,mjs}": "eslint --fix",
+        "ai-rulez.yaml": [
+            "pnpm ai-rulez generate",
+            "git add CLAUDE.md GEMINI.md"
+        ]
     },
     "dependencies": {
         "@faker-js/faker": "^9.9.0",
         "@tool-belt/type-predicates": "^1.4.0",
         "@vitest/coverage-v8": "^3.2.4",
+        "docusaurus-plugin-typedoc": "^1.4.0",
         "prettier-plugin-jsdoc": "^1.3.3",
-        "rimraf": "^6.0.1"
+        "rimraf": "^6.0.1",
+        "typedoc": "^0.28.7",
+        "typedoc-plugin-markdown": "^4.7.0"
     },
     "peerDependencies": {
         "zod": "^3.25.0"
